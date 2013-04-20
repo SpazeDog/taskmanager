@@ -97,3 +97,43 @@ protected void doInBackground(Context... params) {
     return someMethod( params[0] );
 }
 ```
+
+TaskManager can also be used from within Fragments. You just need to use getFragment() instead of getActivity() from within the UI methods.
+
+```java
+public class MyFragment extends Fragment {
+    private void asyncLoader() {
+        new Task<Context, Void, Boolean>(this, "nameOfMyAsyncLoader") {
+            @Override
+            protected void onUIReady() {
+                ((MyFragment) getFragment(R.id.frame)).mProgressDialog = ProgressDialog.show(getActivity(), "", "Loading...");
+            }
+
+            @Override
+            protected void onPreExecute() {
+                ((MyFragment) getFragment(R.id.frame)).mLoading = true;
+            }
+
+            @Override
+            protected void doInBackground(Context... params) {
+                return someMethod( params[0] );
+            }
+
+            @Override
+            protected void onPostExecute(Boolean result) {
+                // You can also use getFragment("myTag")
+                ((MyFragment) getFragment(R.id.frame)).mProgressDialog.dismiss();
+                ((MyFragment) getFragment(R.id.frame)).mLoading = false;
+
+                if ( result ) {
+                    ...
+
+                } else {
+                    ...
+                }
+            }
+
+        }.execute( getActivity().getApplicationContext() );
+    }
+}
+```

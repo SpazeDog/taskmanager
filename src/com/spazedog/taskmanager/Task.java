@@ -85,6 +85,14 @@ public abstract class Task<Params, Progress, Result>  {
     public FragmentActivity getActivity() {
         return mManager.getActivity();
     }
+
+    public Fragment getFragment(String aTag) {
+    	return mManager.getActivity().getSupportFragmentManager().findFragmentByTag(aTag);
+    }
+    
+    public Fragment getFragment(Integer aId) {
+    	return mManager.getActivity().getSupportFragmentManager().findFragmentById(aId);
+    }
     
     protected void onUIReady() {}
     protected void onPreExecute() {}
