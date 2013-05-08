@@ -17,7 +17,7 @@
  * along with TaskManager. If not, see <http://www.gnu.org/licenses/>
  */
 
-package com.spazedog.taskmanager;
+package com.spazedog.lib.taskmanager;
 
 public interface TaskReceiver {
     public Boolean onAttachUI();

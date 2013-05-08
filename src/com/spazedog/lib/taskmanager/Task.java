@@ -17,7 +17,7 @@
  * along with TaskManager. If not, see <http://www.gnu.org/licenses/>
  */
 
-package com.spazedog.taskmanager;
+package com.spazedog.lib.taskmanager;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -25,11 +25,15 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
+import android.annotation.TargetApi;
 import android.os.AsyncTask;
+import android.os.Build;
+import android.support.v4.app.Fragment;
 import android.support.v4.app.FragmentActivity;
 import android.support.v4.app.FragmentManager;
 import android.util.Log;
 
+@TargetApi(Build.VERSION_CODES.CUPCAKE)
 public abstract class Task<Params, Progress, Result>  {
     public final static String TAG = "TaskManager_Async";
     
