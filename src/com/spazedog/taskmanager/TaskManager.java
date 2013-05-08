@@ -30,6 +30,7 @@ public class TaskManager extends Fragment {
     protected final Object mLock = new Object();
     
     private ArrayList<TaskReceiver> mReceivers = new ArrayList<TaskReceiver>();
+    protected Boolean mUIAttached = false;
     
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -42,6 +43,8 @@ public class TaskManager extends Fragment {
         super.onActivityCreated(savedInstanceState);
         
         synchronized (mLock) {
+            mUIAttached = true;
+
             ArrayList<TaskReceiver> lReceivers = new ArrayList<TaskReceiver>();
             
             for (int i=0; i < mReceivers.size(); i++) {
@@ -59,6 +62,8 @@ public class TaskManager extends Fragment {
         super.onDetach();
      
         synchronized (mLock) {
+            mUIAttached = false;
+
             ArrayList<TaskReceiver> lReceivers = new ArrayList<TaskReceiver>();
             
             for (int i=0; i < mReceivers.size(); i++) {
@@ -75,6 +80,10 @@ public class TaskManager extends Fragment {
         synchronized (mLock) {
             mReceivers.add( (TaskReceiver) aReceiver );
         }
+    }
+
+    public Boolean isUIAttached() {
+    	return mUIAttached;
     }
 }
 

@@ -41,7 +41,6 @@ public abstract class Task<Params, Progress, Result>  {
     private Map<String, Runnable> mExecute = new HashMap<String, Runnable>();
     private Map<String, Boolean> mCheck = new HashMap<String, Boolean>();
     
-    private Boolean mUIAttached = false;
     private Boolean mFinished = false;
     private Boolean mInitiated = false;
     private String mTag;
@@ -66,7 +65,7 @@ public abstract class Task<Params, Progress, Result>  {
     private void runMethod(String aMethodName, Runnable aMethod) {
         synchronized (mLock) {
             if (!mFinished) {
-                if (mExecute.size() > 0 || !mUIAttached) {
+                if (mExecute.size() > 0 || !mManager.isUIAttached()) {
                     Log.i("TaskManager.AsyncTask()", "Adding " + aMethodName + "() to the execution list");
                     mExecute.put(aMethodName, aMethod);
                     
@@ -107,8 +106,6 @@ public abstract class Task<Params, Progress, Result>  {
                 @Override
                 public Boolean onAttachUI() {
                     synchronized (Task.this.mLock) {
-                        Task.this.mUIAttached = true;
-                        
                         if (!Task.this.mFinished) {
                             if (Task.this.mInitiated) {
                                 Log.i("TaskManager.AsyncTask()", "Executing onUIReady()");
@@ -137,7 +134,7 @@ public abstract class Task<Params, Progress, Result>  {
                 @Override
                 public Boolean onDetachUI() {
                     synchronized (Task.this.mLock) {
-                        return (Task.this.mUIAttached = false);
+                        return false;
                     }
                 }
             });
