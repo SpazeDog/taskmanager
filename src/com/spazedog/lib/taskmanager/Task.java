@@ -245,6 +245,10 @@ public abstract class Task<Params, Progress, Result> implements ITask {
     protected void onPostExecute(Result result) {}
     protected void onCancelled() {}
     
+    public void publishProgress(Progress... values) {
+    	cTask.publicPublishProgress(values);
+    }
+    
     public boolean cancel(boolean mayInterruptIfRunning) {
         return cTask.cancel(mayInterruptIfRunning);
     }
@@ -287,7 +291,7 @@ public abstract class Task<Params, Progress, Result> implements ITask {
 	 * # Internal AsyncTask instance
 	 * ### 
 	 */
-    private AsyncTask<Params, Progress, Result> cTask = new AsyncTask<Params, Progress, Result>() {
+    private InnerAsyncTask<Params, Progress, Result> cTask = new InnerAsyncTask<Params, Progress, Result>() {
         @Override
         protected void onPreExecute() {
             run("onPreExecute", new Runnable() {
@@ -342,5 +346,11 @@ public abstract class Task<Params, Progress, Result> implements ITask {
                 }
             });
         }
-	};
+    };
+    
+    public abstract class InnerAsyncTask<Params, Progress, Result> extends AsyncTask<Params, Progress, Result> {
+    	public void publicPublishProgress(Progress... values) {
+    		this.publishProgress(values);
+    	}
+	}
 }
