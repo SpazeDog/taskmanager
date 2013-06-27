@@ -19,8 +19,7 @@
 
 package com.spazedog.lib.taskmanager;
 
-public interface TaskReceiver {
-    public Boolean onAttachUI();
-    public Boolean onDetachUI();
+public interface ITask {
+	public Boolean onAttachUI();
+	public Boolean onDetachUI();
 }
-

@@ -13,45 +13,24 @@ TaskManager is an extension of `AsyncTask` which fixes it's issues (Based on an 
 * **Features**
  - Makes sure that UI inteaction waits until the UI is pressent
  - Makes sure that flipping the screen does not produce multiple instances running the same tasks
- - Adds a new inteaction to AsyncTask `onUIReady()` which is invoked whenever te UI is re-created from detached state
+ - Adds a new inteaction to AsyncTask `onUIReady()` and `onUIPause()` which is invoked whenever the UI is detached and re-attached
+ - Compatible with both FragmentManager (Activity + Fragment) and the Support FragmentManager (FragmentActivity + v4 Fragment) from the v4 Support Library
+ - Makes it easy to use within both Activities and Fragments
 
 ```java
-public class MyActivity extends FragmentActivity {
+// Execute from inside an Activity
+public class MyActivity extends Activity {
 
     private ProgressDialog mProgressDialog;
-
-    private Boolean mLoading = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        if (savedInstanceState != null) {
-            mLoading = savedInstanceState.getBoolean("LoadingState", 0);
-        }
-
-        if (!mLoading) {
-            asyncLoader();
-        }
-    }
-
-    @Override
-    public void onSaveInstanceState(Bundle savedInstanceState) {
-        savedInstanceState.putBoolean("LoadingState", mLoading);
-
-        super.onSaveInstanceState(savedInstanceState);
-    }
-
-    private void asyncLoader() {
         new Task<Context, Void, Boolean>(this, "nameOfMyAsyncLoader") {
             @Override
             protected void onUIReady() {
-                ((MyActivity) getActivity()).mProgressDialog = ProgressDialog.show(getActivity(), "", "Loading...");
-            }
-
-            @Override
-            protected void onPreExecute() {
-                ((MyActivity) getActivity()).mLoading = true;
+                ((MyActivity) getActivityObject()).mProgressDialog = ProgressDialog.show( (Activity) getActivityObject(), "", "Loading...");
             }
 
             @Override
@@ -61,8 +40,7 @@ public class MyActivity extends FragmentActivity {
 
             @Override
             protected void onPostExecute(Boolean result) {
-                ((MyActivity) getActivity()).mProgressDialog.dismiss();
-                ((MyActivity) getActivity()).mLoading = false;
+                ((MyActivity) getActivityObject()).mProgressDialog.dismiss();
 
                 if ( result ) {
                     ...
@@ -77,41 +55,20 @@ public class MyActivity extends FragmentActivity {
 }
 ```
 
-The `onUIReady()` is executed as the very first one and after that each time the UI is re-created. None of the UI inteactive methods are executed if the UI is detached. Instead they will be stored and executed as soon as the UI is re-created, and in the correct order. 
-
-Also, if the UI is re-created while async is running, TaskManager will not allow it to create a new instance with the name `nameOfMyAsyncLoader`. So you could leave out `mLoading` without any issues, although it is good practice to keep it.
-
-Note that because the UI inteactive methods might be stored until the UI is pressent, you could end up having `onPreExecute()` being executed before `onUIReady()` and `onPreExecute()`. As these are mostly used to create loading indicators, it does not really matter as they will be executed as soon as something like loading indicators are needed.
-
-But if you for some reason need `onPreExecute()` to wait until `onUIReady()` and `onPreExecute()` is done, you can easily do so.
-
 ```java
-protected void doInBackground(Context... params) {
-    while (!this.check("onPreExecute")) {
-        try {
-            Thread.sleep(300);
-
-        } catch (InterruptedException e) {}
-    }
-
-    return someMethod( params[0] );
-}
-```
-
-TaskManager can also be used from within Fragments. You just need to use getFragment() instead of getActivity() from within the UI methods.
-
-```java
+// Execute from inside an Fragment
 public class MyFragment extends Fragment {
-    private void asyncLoader() {
+
+    private ProgressDialog mProgressDialog;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+
         new Task<Context, Void, Boolean>(this, "nameOfMyAsyncLoader") {
             @Override
             protected void onUIReady() {
-                ((MyFragment) getFragment(R.id.frame)).mProgressDialog = ProgressDialog.show(getActivity(), "", "Loading...");
-            }
-
-            @Override
-            protected void onPreExecute() {
-                ((MyFragment) getFragment(R.id.frame)).mLoading = true;
+                ((MyFragment) getFragmentObject()).mProgressDialog = ProgressDialog.show( (Activity) getActivityObject(), "", "Loading...");
             }
 
             @Override
@@ -121,9 +78,7 @@ public class MyFragment extends Fragment {
 
             @Override
             protected void onPostExecute(Boolean result) {
-                // You can also use getFragment("myTag")
-                ((MyFragment) getFragment(R.id.frame)).mProgressDialog.dismiss();
-                ((MyFragment) getFragment(R.id.frame)).mLoading = false;
+                ((MyFragment) getFragmentObject()).mProgressDialog.dismiss();
 
                 if ( result ) {
                     ...
@@ -137,3 +92,9 @@ public class MyFragment extends Fragment {
     }
 }
 ```
+
+The `onUIReady()` is executed as the very first one and after that each time the UI is re-attached (Re-created). None of the UI inteactive methods are executed if the UI is detached. Instead they will be stored in a pending container and executed as soon as the UI is re-created, and in the correct order. 
+
+Also, if the UI is re-created while async is running, TaskManager will not allow it to create a new instance with the same name.
+
+Note that when using TaskManager within a Fragment and make a call to `getFragmentObject()`, it will return `NULL` if you did not assign a Tag Name to it when you added it trough FragmentManager. You can also search for other Fragments by calling `getFragmentObject(TAG)` or `getFragmentObject(ID)`.

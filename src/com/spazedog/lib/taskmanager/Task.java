@@ -19,84 +19,225 @@
 
 package com.spazedog.lib.taskmanager;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
+import android.annotation.SuppressLint;
 import android.annotation.TargetApi;
 import android.os.AsyncTask;
 import android.os.Build;
-import android.support.v4.app.Fragment;
-import android.support.v4.app.FragmentActivity;
-import android.support.v4.app.FragmentManager;
 import android.util.Log;
 
-@TargetApi(Build.VERSION_CODES.CUPCAKE)
-public abstract class Task<Params, Progress, Result>  {
-    public final static String TAG = "TaskManager_Async";
-    
-    private final static Map<String, Boolean> mOngoing = new HashMap<String, Boolean>();
-    
-    private TaskManager mManager;
-    private AsyncTask<Params, Progress, Result> mTask;
-    
-    private Map<String, Runnable> mExecute = new HashMap<String, Runnable>();
-    private Map<String, Boolean> mCheck = new HashMap<String, Boolean>();
-    
-    private Boolean mFinished = false;
-    private Boolean mInitiated = false;
-    private String mTag;
-    protected final Object mLock = new Object();
-    
-    public Task(FragmentActivity aActivity) {
-        this(aActivity, TAG);
-    }
-    
-    public Task(FragmentActivity aActivity, String aTag) {
-        FragmentManager lManager = aActivity.getSupportFragmentManager();
-        
-        if ((mManager = ((TaskManager) lManager.findFragmentByTag(TaskManager.TAG))) == null) {
-            mManager = new TaskManager();
-            
-            lManager.beginTransaction().add(mManager, TaskManager.TAG).commit();
-        }
-        
-        mTag = aTag;
-    }
-    
-    private void runMethod(String aMethodName, Runnable aMethod) {
-        synchronized (mLock) {
-            if (!mFinished) {
-                if (mExecute.size() > 0 || !mManager.isUIAttached()) {
-                    Log.i("TaskManager.AsyncTask()", "Adding " + aMethodName + "() to the execution list");
-                    mExecute.put(aMethodName, aMethod);
-                    
-                } else {
-                    getActivity().runOnUiThread(aMethod);
-                    mCheck.put(aMethodName, true);
-                }
-            }
-        }
-    }
-    
-    public Boolean check(String aMethodName) {
-        return mCheck.get(aMethodName) != null && mCheck.get(aMethodName) == true;
-    }
-    
-    public FragmentActivity getActivity() {
-        return mManager.getActivity();
-    }
+public abstract class Task<Params, Progress, Result> implements ITask {
+	
+	public final static String TAG = "TaskManager_Async";
+	
+	public static Boolean LOG = false;
+	
+	private final static ArrayList<String> oOngoing = new ArrayList<String>();
+	
+	private String mCaller;
+	
+	private String mFragmentTag;
+	
+	private IManager mManager;
+	
+	private Boolean mSupport = false;
+	
+	protected final Object mLock = new Object();
+	
+	private Map<String, Runnable> mPendingMethods = new HashMap<String, Runnable>();
+	private final ArrayList<String> mExecutedMethods = new ArrayList<String>();
+	
+	private static void log(String aMethod, String aMessage) {
+		if (LOG) {
+			Log.i("TaskManager." + aMethod, aMessage);
+		}
+	}
+	
+	public Task(android.support.v4.app.Fragment aFragment, String aTag) {
+		this(aFragment.getActivity(), aTag);
+		
+		mFragmentTag = aFragment.getTag();
+	}
+	
+	public Task(android.support.v4.app.FragmentActivity aActivity, String aTag) {
+		StackTraceElement directCaller = Thread.currentThread().getStackTrace()[4];
+		mCaller = directCaller.getClassName() + "." + directCaller.getMethodName() + "()#" + aTag;
 
-    public Fragment getFragment(String aTag) {
-    	return mManager.getActivity().getSupportFragmentManager().findFragmentByTag(aTag);
-    }
-    
-    public Fragment getFragment(Integer aId) {
-    	return mManager.getActivity().getSupportFragmentManager().findFragmentById(aId);
-    }
-    
+		log("Task", "Creating new Task for " + mCaller);
+		
+		android.support.v4.app.FragmentManager fm = aActivity.getSupportFragmentManager();
+		
+		if ((mManager = ((IManager) fm.findFragmentByTag(SupportTaskManager.TAG))) == null) {
+			log("Task", "No TaskManager has been added to this activity, initiating a new instance");
+			fm.beginTransaction().add((android.support.v4.app.Fragment) (mManager = new SupportTaskManager()), SupportTaskManager.TAG).commit();
+		}
+		
+		mSupport = true;
+	}
+	
+	@TargetApi(Build.VERSION_CODES.HONEYCOMB)
+	public Task(android.app.Fragment aFragment, String aTag) {
+		this(aFragment.getActivity(), aTag);
+		
+		mFragmentTag = aFragment.getTag();
+	}
+	
+	@TargetApi(Build.VERSION_CODES.HONEYCOMB)
+	public Task(android.app.Activity aActivity, String aTag) {
+		StackTraceElement directCaller = Thread.currentThread().getStackTrace()[4];
+		mCaller = directCaller.getClassName() + "." + directCaller.getMethodName() + "()#" + aTag;
+
+		log("Task", "Creating new Task for " + mCaller);
+		
+		android.app.FragmentManager fm = aActivity.getFragmentManager();
+		
+		if ((mManager = ((IManager) fm.findFragmentByTag(TaskManager.TAG))) == null) {
+			log("Task", "No TaskManager has been added to this activity, initiating a new instance");
+			fm.beginTransaction().add((android.app.Fragment) (mManager = new TaskManager()), TaskManager.TAG).commit();
+		}
+	}
+	
+	@Override
+	public Boolean onAttachUI() {
+		synchronized (mLock) {
+			runUIReady(false);
+			
+			if (mPendingMethods.size() > 0) {
+				log("onAttachUI", "Executing pending methods");
+				
+				Map<String, Runnable> lPending = mPendingMethods;
+				mPendingMethods = new HashMap<String, Runnable>();
+				
+				for (String name : lPending.keySet()) {
+					if (run(name, lPending.get(name))) {
+						return true;
+					}
+				}
+			}
+			
+			return false;
+		}
+	}
+	
+	@Override
+	public Boolean onDetachUI() {
+		synchronized (mLock) {
+			runUIPause(false);
+			
+			return false;
+		}
+	}
+	
+	private Boolean run(String aMethod, Runnable aCode) {
+		synchronized (mLock) {
+			if (!mExecutedMethods.contains("onPostExecute") && !mExecutedMethods.contains("onCancelled")) {
+				if (mPendingMethods.size() > 0 || !mManager.isUIAttached()) {
+					log("run", "UI is not pressent, adding " + aMethod + "() to the list of pending methods");
+					mPendingMethods.put(aMethod, aCode);
+					
+				} else {
+					log("run", "UI is pressent, running " + aMethod + "()");
+					
+					if (mSupport) {
+						((android.support.v4.app.FragmentActivity) getActivityObject()).runOnUiThread(aCode);
+						
+					} else {
+						((android.app.Activity) getActivityObject()).runOnUiThread(aCode);
+					}
+					
+					mExecutedMethods.add(aMethod);
+					
+					if (aMethod.equals("onPostExecute") || aMethod.equals("onCancelled")) {
+						for (int i=0; i < oOngoing.size(); i++) {
+							if (oOngoing.get(i).equals(mCaller)) {
+								oOngoing.remove(i); break;
+							}
+						}
+						
+						// True = Remove Task from TaskManagers receiver list
+						return true;
+					}
+				}
+				
+			} else {
+				log("run", "This task has finished. Canceling the call to " + aMethod + "()"); return true;
+			}
+			
+			return false;
+		}
+	}
+	
+	private void runUIReady(Boolean aForce) {
+		if (aForce || mExecutedMethods.contains("onPreExecute")) {
+			log("AsyncTask", "Executing onUIReady()");
+			
+			onUIReady();
+			
+			if (!mExecutedMethods.contains("onUIReady")) {
+				mExecutedMethods.add("onUIReady");
+			}
+		}
+	}
+	
+	private void runUIPause(Boolean aForce) {
+		if (aForce || mExecutedMethods.contains("onUIReady")) {
+			log("AsyncTask", "Executing onUIPause()");
+			
+			onUIPause();
+			
+			if (!mExecutedMethods.contains("onUIPause")) {
+				mExecutedMethods.add("onUIPause");
+			}
+		}
+	}
+	
+	@SuppressLint("NewApi")
+	public Object getActivityObject() {
+		if (mSupport) 
+			return ((android.support.v4.app.Fragment) mManager).getActivity();
+		
+		return ((android.app.Fragment) mManager).getActivity();
+	}
+	
+	@SuppressLint("NewApi")
+	public Object getFragmentObject() {
+		if (mFragmentTag != null) {
+			if (mSupport) 
+				return ((android.support.v4.app.Fragment) mManager).getActivity().getSupportFragmentManager().findFragmentByTag(mFragmentTag);
+			
+			return ((android.app.Fragment) mManager).getActivity().getFragmentManager().findFragmentByTag(mFragmentTag);
+		}
+		
+		return null;
+	}
+	
+	@SuppressLint("NewApi")
+	public Object getFragmentObject(String aTag) {
+		if (mSupport) 
+			return ((android.support.v4.app.Fragment) mManager).getActivity().getSupportFragmentManager().findFragmentByTag(aTag);
+		
+		return ((android.app.Fragment) mManager).getActivity().getFragmentManager().findFragmentByTag(aTag);
+	}
+	
+	@SuppressLint("NewApi")
+	public Object getFragmentObject(Integer aId) {
+		if (mSupport) 
+			return ((android.support.v4.app.Fragment) mManager).getActivity().getSupportFragmentManager().findFragmentById(aId);
+		
+		return ((android.app.Fragment) mManager).getActivity().getFragmentManager().findFragmentById(aId);
+	}
+	
+	/* ###
+	 * # AsyncTask methods
+	 * ### 
+	 */
+	protected void onUIPause() {}
     protected void onUIReady() {}
     protected void onPreExecute() {}
     protected abstract Result doInBackground(Params... params);
@@ -104,132 +245,102 @@ public abstract class Task<Params, Progress, Result>  {
     protected void onPostExecute(Result result) {}
     protected void onCancelled() {}
     
-    public Task<Params, Progress, Result> execute(Params... params) {
-        if (mOngoing.get(mTag) == null) {
-            mManager.addReceiver(new TaskReceiver() {
-                @Override
-                public Boolean onAttachUI() {
-                    synchronized (Task.this.mLock) {
-                        if (!Task.this.mFinished) {
-                            if (Task.this.mInitiated) {
-                                Log.i("TaskManager.AsyncTask()", "Executing onUIReady()");
-                                Task.this.onUIReady();
-                            }
-                            
-                            for (String name : Task.this.mExecute.keySet()) {
-                                Task.this.getActivity().runOnUiThread(mExecute.get(name));
-                                Task.this.mCheck.put(name, true);
-                                
-                                if (Task.this.mFinished) {
-                                    return true;
-                                }
-                            }
-                            
-                            Task.this.mExecute = new HashMap<String, Runnable>();
-                            
-                        } else {
-                            return true;
-                        }
-                        
-                        return false;
-                    }
-                }
-                
-                @Override
-                public Boolean onDetachUI() {
-                    synchronized (Task.this.mLock) {
-                        return false;
-                    }
-                }
-            });
-            
-            mTask = new AsyncTask<Params, Progress, Result>() {
-                @Override
-                protected void onPreExecute() {
-                    runMethod("onPreExecute", new Runnable() {
-                        public void run() {
-                            Task.this.mInitiated = true;
-                            
-                            synchronized (Task.this.mLock) {
-                                Log.i("TaskManager.AsyncTask()", "Executing onUIReady()");
-                                Task.this.onUIReady();
-                            }
-                            
-                            Log.i("TaskManager.AsyncTask()", "Executing onPreExecute()");
-                            Task.this.onPreExecute();
-                        }
-                    });
-                }
-    
-                @Override
-                protected Result doInBackground(Params... params) {
-                    Log.i("TaskManager.AsyncTask()", "Executing doInBackground()");
-                    return Task.this.doInBackground(params);
-                }
-                
-                @Override
-                protected void onProgressUpdate(final Progress... values) {
-                    runMethod("onProgressUpdate", new Runnable() {
-                        public void run() {
-                            Log.i("TaskManager.AsyncTask()", "Executing onProgressUpdate()");
-                            Task.this.onProgressUpdate(values);
-                        }
-                    });
-                }
-                
-                @Override
-                protected void onPostExecute(final Result result) {
-                    runMethod("onPostExecute", new Runnable() {
-                        public void run() {
-                            Log.i("TaskManager.AsyncTask()", "Executing onPostExecute()");
-                            Task.this.mFinished = true;
-                            Task.this.onPostExecute(result);
-                            
-                            Task.mOngoing.remove(Task.this.mTag);
-                        }
-                    });
-                }
-                
-                @Override
-                protected void onCancelled() {
-                    runMethod("onCancelled", new Runnable() {
-                        public void run() {
-                            Log.i("TaskManager.AsyncTask()", "Executing onCancelled()");
-                            Task.this.mFinished = true;
-                            Task.this.onCancelled();
-                            
-                            Task.mOngoing.remove(Task.this.mTag);
-                        }
-                    });
-                }
-            };
-    
-            mOngoing.put(mTag, true);
-            
-            mTask.execute(params);
-        }
-
-        return this;
-    }
-    
     public boolean cancel(boolean mayInterruptIfRunning) {
-        return mTask.cancel(mayInterruptIfRunning);
+        return cTask.cancel(mayInterruptIfRunning);
     }
 
     public boolean isCancelled() {
-        return mTask.isCancelled();
+        return cTask.isCancelled();
     }
 
     public Result get() throws InterruptedException, ExecutionException {
-        return mTask.get();
+        return cTask.get();
     }
 
     public Result get(long timeout, TimeUnit unit) throws InterruptedException, ExecutionException, TimeoutException {
-        return mTask.get(timeout, unit);
+        return cTask.get(timeout, unit);
     }
 
     public AsyncTask.Status getStatus() {
-        return mTask.getStatus();
+        return cTask.getStatus();
     }
-}
+    
+    public Boolean execute(Params... params) {
+    	if (!oOngoing.contains(mCaller)) {
+    		log("execute", "Adding receiver for this Task");
+    		
+    		mManager.addTask(this);
+    		oOngoing.add(mCaller);
+    		
+    		cTask.execute(params);
+    		
+    		return true;
+    		
+    	} else {
+    		log("execute", "Another Task with the same name is already running in this activity!");
+    	}
+    	
+    	return false;
+    }
+	
+	/* ###
+	 * # Internal AsyncTask instance
+	 * ### 
+	 */
+    private AsyncTask<Params, Progress, Result> cTask = new AsyncTask<Params, Progress, Result>() {
+        @Override
+        protected void onPreExecute() {
+            run("onPreExecute", new Runnable() {
+                public void run() {
+                	Task.this.runUIReady(true);
+                    
+                	log("AsyncTask", "Executing onPreExecute()");
+                    Task.this.onPreExecute();
+                }
+            });
+        }
+        
+		@Override
+		protected Result doInBackground(Params... params) {
+			while (!Task.this.mExecutedMethods.contains("onPreExecute")) {
+				try {
+					Thread.sleep(300);
+					
+				} catch (InterruptedException e) {}
+			}
 
+			log("AsyncTask", "Executing doInBackground()");
+            return Task.this.doInBackground(params);
+		}
+		
+        @Override
+        protected void onProgressUpdate(final Progress... values) {
+            run("onProgressUpdate", new Runnable() {
+                public void run() {
+                	log("AsyncTask", "Executing onProgressUpdate()");
+                    Task.this.onProgressUpdate(values);
+                }
+            });
+        }
+        
+        @Override
+        protected void onPostExecute(final Result result) {
+            run("onPostExecute", new Runnable() {
+                public void run() {
+                	log("AsyncTask", "Executing onPostExecute()");
+                    Task.this.onPostExecute(result);
+                }
+            });
+        }
+        
+        @Override
+        protected void onCancelled() {
+            run("onPostExecute", new Runnable() {
+                public void run() {
+                	log("AsyncTask", "Executing onCancelled()");
+                    Task.this.onCancelled();
+                }
+            });
+        }
+	};
+}

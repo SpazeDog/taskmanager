@@ -21,15 +21,12 @@ package com.spazedog.lib.taskmanager;
 
 import java.util.ArrayList;
 
-import android.annotation.TargetApi;
-import android.app.Fragment;
-import android.os.Build;
 import android.os.Bundle;
+import android.support.v4.app.Fragment;
 
-@TargetApi(Build.VERSION_CODES.HONEYCOMB)
-public class TaskManager extends Fragment implements IManager {
-    public final static String TAG = "TaskManager_Fragment";
-    
+public class SupportTaskManager extends Fragment implements IManager {
+	public final static String TAG = "TaskManager_Fragment_Support";
+	
     protected final Object mLock = new Object();
     
     private ArrayList<ITask> mTasks = new ArrayList<ITask>();
@@ -89,4 +86,3 @@ public class TaskManager extends Fragment implements IManager {
     	return mUIAttached;
     }
 }
-
