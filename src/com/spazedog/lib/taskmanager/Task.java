@@ -51,6 +51,7 @@ public abstract class Task<Params, Progress, Result> implements ITask {
 	private IManager mManager;
 	
 	private Boolean mSupport = false;
+	private Boolean mFragment = false;
 	
 	protected final Object mLock = new Object();
 	
@@ -67,6 +68,7 @@ public abstract class Task<Params, Progress, Result> implements ITask {
 		this(aFragment.getActivity(), aTag);
 		
 		mFragmentTag = aFragment.getTag();
+		mFragment = true;
 	}
 	
 	public Task(android.support.v4.app.FragmentActivity aActivity, String aTag) {
@@ -90,6 +92,7 @@ public abstract class Task<Params, Progress, Result> implements ITask {
 		this(aFragment.getActivity(), aTag);
 		
 		mFragmentTag = aFragment.getTag();
+		mFragment = true;
 	}
 	
 	@TargetApi(Build.VERSION_CODES.HONEYCOMB)
@@ -219,12 +222,12 @@ public abstract class Task<Params, Progress, Result> implements ITask {
 	}
 	
 	@SuppressLint("NewApi")
-	public Object getFragmentObject() {
-		if (mFragmentTag != null) {
-			if (mSupport) 
-				return ((android.support.v4.app.Fragment) mManager).getActivity().getSupportFragmentManager().findFragmentByTag(mFragmentTag);
+	public Object getObject() {
+		if (mFragment && mFragmentTag != null) {
+			return getFragmentObject(mFragmentTag);
 			
-			return ((android.app.Fragment) mManager).getActivity().getFragmentManager().findFragmentByTag(mFragmentTag);
+		} else if (!mFragment) {
+			return getActivityObject();
 		}
 		
 		return null;
