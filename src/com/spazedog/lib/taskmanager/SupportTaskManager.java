@@ -23,6 +23,7 @@ import java.util.ArrayList;
 
 import android.os.Bundle;
 import android.support.v4.app.Fragment;
+import android.util.Log;
 
 public class SupportTaskManager extends Fragment implements IManager {
 	public final static String TAG = "TaskManager_Fragment_Support";
@@ -39,9 +40,9 @@ public class SupportTaskManager extends Fragment implements IManager {
     }
     
     @Override
-    public void onActivityCreated(Bundle savedInstanceState) {
-        super.onActivityCreated(savedInstanceState);
-        
+    public void onResume() {
+    	super.onResume();
+    	
         synchronized (mLock) {
             mUIAttached = true;
 
@@ -58,9 +59,9 @@ public class SupportTaskManager extends Fragment implements IManager {
     }
     
     @Override
-    public void onDetach() {
-        super.onDetach();
-     
+    public void onPause() {
+    	super.onPause();
+    	
         synchronized (mLock) {
             mUIAttached = false;
             

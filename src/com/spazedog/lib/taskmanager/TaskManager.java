@@ -42,8 +42,8 @@ public class TaskManager extends Fragment implements IManager {
     }
     
     @Override
-    public void onActivityCreated(Bundle savedInstanceState) {
-        super.onActivityCreated(savedInstanceState);
+    public void onResume() {
+        super.onResume();
         
         synchronized (mLock) {
             mUIAttached = true;
@@ -61,8 +61,8 @@ public class TaskManager extends Fragment implements IManager {
     }
     
     @Override
-    public void onDetach() {
-        super.onDetach();
+    public void onPause() {
+        super.onPause();
      
         synchronized (mLock) {
             mUIAttached = false;
