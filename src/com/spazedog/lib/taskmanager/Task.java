@@ -36,7 +36,11 @@ public abstract class Task<Params, Progress, Result> implements ITask {
 	
 	public final static String TAG = "TaskManager_Async";
 	
-	public static Boolean LOG = false;
+	public static Boolean LOG = true;
+	
+	public final static Integer RUN_NORMAL = 0;
+	public final static Integer SKIP_CHECK = 1;
+	public final static Integer SKIP_ALL = 2;
 	
 	private final static ArrayList<String> oOngoing = new ArrayList<String>();
 	
@@ -106,9 +110,14 @@ public abstract class Task<Params, Progress, Result> implements ITask {
 	@Override
 	public Boolean onAttachUI() {
 		synchronized (mLock) {
-			runUIReady(false);
+            Boolean check = run("onUIReady", new Runnable() {
+                public void run() {
+                	Task.this.runUIReady(false);
+                }
+                
+            }, SKIP_ALL);
 			
-			if (mPendingMethods.size() > 0) {
+			if (mPendingMethods.size() > 0 && !check) {
 				log("onAttachUI", "Executing pending methods");
 				
 				Map<String, Runnable> lPending = mPendingMethods;
@@ -121,52 +130,65 @@ public abstract class Task<Params, Progress, Result> implements ITask {
 				}
 			}
 			
-			return false;
+			return check;
 		}
 	}
 	
 	@Override
 	public Boolean onDetachUI() {
 		synchronized (mLock) {
-			runUIPause(false);
-			
-			return false;
+			return run("onUIPause", new Runnable() {
+                public void run() {
+                	Task.this.runUIPause(false);
+                }
+                
+            }, SKIP_ALL);
 		}
 	}
 	
 	private Boolean run(String aMethod, Runnable aCode) {
 		synchronized (mLock) {
-			if (!mExecutedMethods.contains("onPostExecute") && !mExecutedMethods.contains("onCancelled")) {
-				if (mPendingMethods.size() > 0 || !mManager.isUIAttached()) {
-					log("run", "UI is not pressent, adding " + aMethod + "() to the list of pending methods");
-					mPendingMethods.put(aMethod, aCode);
-					
-				} else {
-					log("run", "UI is pressent, running " + aMethod + "()");
-					
-					if (mSupport) {
-						((android.support.v4.app.FragmentActivity) getActivityObject()).runOnUiThread(aCode);
+			return run(aMethod, aCode, RUN_NORMAL);
+		}
+	}
+	
+	private Boolean run(String aMethod, Runnable aCode, Integer aAction) {
+		synchronized (mLock) {
+			if (aAction > RUN_NORMAL || !mExecutedMethods.contains(aMethod)) {
+				if (!mExecutedMethods.contains("onPostExecute") && !mExecutedMethods.contains("onCancelled")) {
+					if (aAction < SKIP_ALL && (mPendingMethods.size() > 0 || !mManager.isUIAttached())) {
+						log("run", "UI is not pressent, adding " + aMethod + "() to the list of pending methods");
+						mPendingMethods.put(aMethod, aCode);
 						
-					} else {
-						((android.app.Activity) getActivityObject()).runOnUiThread(aCode);
-					}
-					
-					mExecutedMethods.add(aMethod);
-					
-					if (aMethod.equals("onPostExecute") || aMethod.equals("onCancelled")) {
-						for (int i=0; i < oOngoing.size(); i++) {
-							if (oOngoing.get(i).equals(mCaller)) {
-								oOngoing.remove(i); break;
-							}
+					} else if (aAction == SKIP_ALL || mManager.isUIAttached()) {
+						log("run", "UI is pressent, running " + aMethod + "()");
+						
+						if (mSupport) {
+							((android.support.v4.app.FragmentActivity) getActivityObject()).runOnUiThread(aCode);
+							
+						} else {
+							((android.app.Activity) getActivityObject()).runOnUiThread(aCode);
 						}
 						
-						// True = Remove Task from TaskManagers receiver list
-						return true;
+						if (!mExecutedMethods.contains(aMethod)) {
+							mExecutedMethods.add(aMethod);
+						}
+						
+						if (aMethod.equals("onPostExecute") || aMethod.equals("onCancelled")) {
+							for (int i=0; i < oOngoing.size(); i++) {
+								if (oOngoing.get(i).equals(mCaller)) {
+									oOngoing.remove(i); break;
+								}
+							}
+							
+							// True = Remove Task from TaskManagers receiver list
+							return true;
+						}
 					}
+					
+				} else {
+					log("run", "This task has finished. Canceling the call to " + aMethod + "()"); return true;
 				}
-				
-			} else {
-				log("run", "This task has finished. Canceling the call to " + aMethod + "()"); return true;
 			}
 			
 			return false;
@@ -178,22 +200,13 @@ public abstract class Task<Params, Progress, Result> implements ITask {
 			log("AsyncTask", "Executing onUIReady()");
 			
 			onUIReady();
-			
-			if (!mExecutedMethods.contains("onUIReady")) {
-				mExecutedMethods.add("onUIReady");
-			}
 		}
 	}
 	
 	private void runUIPause(Boolean aForce) {
 		if (aForce || mExecutedMethods.contains("onUIReady")) {
 			log("AsyncTask", "Executing onUIPause()");
-			
 			onUIPause();
-			
-			if (!mExecutedMethods.contains("onUIPause")) {
-				mExecutedMethods.add("onUIPause");
-			}
 		}
 	}
 	
@@ -296,7 +309,12 @@ public abstract class Task<Params, Progress, Result> implements ITask {
         protected void onPreExecute() {
             run("onPreExecute", new Runnable() {
                 public void run() {
-                	Task.this.runUIReady(true);
+                    Task.this.run("onUIReady", new Runnable() {
+                        public void run() {
+                        	Task.this.runUIReady(true);
+                        }
+                        
+                    }, SKIP_ALL);
                     
                 	log("AsyncTask", "Executing onPreExecute()");
                     Task.this.onPreExecute();
@@ -324,7 +342,8 @@ public abstract class Task<Params, Progress, Result> implements ITask {
                 	log("AsyncTask", "Executing onProgressUpdate()");
                     Task.this.onProgressUpdate(values);
                 }
-            });
+                
+            }, SKIP_CHECK);
         }
         
         @Override
@@ -339,7 +358,7 @@ public abstract class Task<Params, Progress, Result> implements ITask {
         
         @Override
         protected void onCancelled() {
-            run("onPostExecute", new Runnable() {
+            run("onCancelled", new Runnable() {
                 public void run() {
                 	log("AsyncTask", "Executing onCancelled()");
                     Task.this.onCancelled();
@@ -348,7 +367,7 @@ public abstract class Task<Params, Progress, Result> implements ITask {
         }
     };
     
-    public abstract class InnerAsyncTask<Params, Progress, Result> extends AsyncTask<Params, Progress, Result> {
+	public abstract class InnerAsyncTask<Params, Progress, Result> extends AsyncTask<Params, Progress, Result> {
     	public void publicPublishProgress(Progress... values) {
     		this.publishProgress(values);
     	}
