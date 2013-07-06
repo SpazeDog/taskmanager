@@ -30,19 +30,14 @@ import android.annotation.SuppressLint;
 import android.annotation.TargetApi;
 import android.os.AsyncTask;
 import android.os.Build;
-import android.util.Log;
 
 public abstract class Task<Params, Progress, Result> implements ITask {
 	
-	public final static String TAG = "TaskManager_Async";
+	public final static String TAG = "Async";
 	
-	public static Boolean LOG = true;
-	
-	public final static Integer RUN_NORMAL = 0;
-	public final static Integer SKIP_CHECK = 1;
-	public final static Integer SKIP_ALL = 2;
-	
-	private final static ArrayList<String> oOngoing = new ArrayList<String>();
+	private final static Integer RUN_NORMAL = 0;
+	private final static Integer SKIP_CHECK = 1;
+	private final static Integer SKIP_ALL = 2;
 	
 	private String mCaller;
 	
@@ -59,9 +54,37 @@ public abstract class Task<Params, Progress, Result> implements ITask {
 	private final ArrayList<String> mExecutedMethods = new ArrayList<String>();
 	
 	private static void log(String aMethod, String aMessage) {
-		if (LOG) {
-			Log.i("TaskManager." + aMethod, aMessage);
+		Utils.log(TAG, aMethod, aMessage);
+	}
+	
+	public final static ITask getTask(android.support.v4.app.Fragment aFragment, String aTag) {
+		return getTask(aFragment.getActivity(), aTag);
+	}
+	
+	public final static ITask getTask(android.support.v4.app.FragmentActivity aActivity, String aTag) {
+		IManager lManager = Utils.getManager(aActivity);
+		
+		if (lManager != null) {
+			return lManager.getTask(aTag);
 		}
+		
+		return null;
+	}
+	
+	@TargetApi(Build.VERSION_CODES.HONEYCOMB)
+	public final static ITask getTask(android.app.Fragment aFragment, String aTag) {
+		return getTask(aFragment.getActivity(), aTag);
+	}
+	
+	@TargetApi(Build.VERSION_CODES.HONEYCOMB)
+	public final static ITask getTask(android.app.Activity aActivity, String aTag) {
+		IManager lManager = Utils.getManager(aActivity);
+		
+		if (lManager != null) {
+			return lManager.getTask(aTag);
+		}
+		
+		return null;
 	}
 	
 	public Task(android.support.v4.app.Fragment aFragment, String aTag) {
@@ -72,18 +95,10 @@ public abstract class Task<Params, Progress, Result> implements ITask {
 	}
 	
 	public Task(android.support.v4.app.FragmentActivity aActivity, String aTag) {
-		StackTraceElement directCaller = Thread.currentThread().getStackTrace()[4];
-		mCaller = directCaller.getClassName() + "." + directCaller.getMethodName() + "()#" + aTag;
-
-		log("Task", "Creating new Task for " + mCaller);
+		log("construct", "[" + aTag + "] Initiating a new Task");
 		
-		android.support.v4.app.FragmentManager fm = aActivity.getSupportFragmentManager();
-		
-		if ((mManager = ((IManager) fm.findFragmentByTag(SupportTaskManager.TAG))) == null) {
-			log("Task", "No TaskManager has been added to this activity, initiating a new instance");
-			fm.beginTransaction().add((android.support.v4.app.Fragment) (mManager = new SupportTaskManager()), SupportTaskManager.TAG).commit();
-		}
-		
+		mCaller = aTag;
+		mManager = Utils.getManager(aActivity);
 		mSupport = true;
 	}
 	
@@ -97,50 +112,41 @@ public abstract class Task<Params, Progress, Result> implements ITask {
 	
 	@TargetApi(Build.VERSION_CODES.HONEYCOMB)
 	public Task(android.app.Activity aActivity, String aTag) {
-		StackTraceElement directCaller = Thread.currentThread().getStackTrace()[4];
-		mCaller = directCaller.getClassName() + "." + directCaller.getMethodName() + "()#" + aTag;
-
-		log("Task", "Creating new Task for " + mCaller);
+		log("construct", "[" + aTag + "] Initiating a new Task");
 		
-		android.app.FragmentManager fm = aActivity.getFragmentManager();
-		
-		if ((mManager = ((IManager) fm.findFragmentByTag(TaskManager.TAG))) == null) {
-			log("Task", "No TaskManager has been added to this activity, initiating a new instance");
-			fm.beginTransaction().add((android.app.Fragment) (mManager = new TaskManager()), TaskManager.TAG).commit();
-		}
+		mCaller = aTag;
+		mManager = Utils.getManager(aActivity);
 	}
 	
 	@Override
-	public Boolean onAttachUI() {
+	public void onAttachUI() {
 		synchronized (mLock) {
-            Boolean check = run("onUIReady", new Runnable() {
+			log("onAttachUI", "[" + mCaller + "] Entering UI state");
+			
+            run("onUIReady", new Runnable() {
                 public void run() {
                 	Task.this.runUIReady(false);
                 }
                 
             }, SKIP_ALL);
 			
-			if (mPendingMethods.size() > 0 && !check) {
-				log("onAttachUI", "Executing pending methods");
-				
+			if (mPendingMethods.size() > 0) {
 				Map<String, Runnable> lPending = mPendingMethods;
 				mPendingMethods = new HashMap<String, Runnable>();
 				
 				for (String name : lPending.keySet()) {
-					if (run(name, lPending.get(name))) {
-						return true;
-					}
+					run(name, lPending.get(name));
 				}
 			}
-			
-			return check;
 		}
 	}
 	
 	@Override
-	public Boolean onDetachUI() {
+	public void onDetachUI() {
 		synchronized (mLock) {
-			return run("onUIPause", new Runnable() {
+			log("onDetachUI", "[" + mCaller + "] Leaving UI state");
+			
+			run("onUIPause", new Runnable() {
                 public void run() {
                 	Task.this.runUIPause(false);
                 }
@@ -149,23 +155,21 @@ public abstract class Task<Params, Progress, Result> implements ITask {
 		}
 	}
 	
-	private Boolean run(String aMethod, Runnable aCode) {
+	private void run(String aMethod, Runnable aCode) {
 		synchronized (mLock) {
-			return run(aMethod, aCode, RUN_NORMAL);
+			run(aMethod, aCode, RUN_NORMAL);
 		}
 	}
 	
-	private Boolean run(String aMethod, Runnable aCode, Integer aAction) {
+	private void run(String aMethod, Runnable aCode, Integer aAction) {
 		synchronized (mLock) {
 			if (aAction > RUN_NORMAL || !mExecutedMethods.contains(aMethod)) {
 				if (!mExecutedMethods.contains("onPostExecute") && !mExecutedMethods.contains("onCancelled")) {
 					if (aAction < SKIP_ALL && (mPendingMethods.size() > 0 || !mManager.isUIAttached())) {
-						log("run", "UI is not pressent, adding " + aMethod + "() to the list of pending methods");
+						log("run", "[" + mCaller + "] The UI is currently not pressent, adding method " + aMethod + "() to the pending list");
 						mPendingMethods.put(aMethod, aCode);
 						
 					} else if (aAction == SKIP_ALL || mManager.isUIAttached()) {
-						log("run", "UI is pressent, running " + aMethod + "()");
-						
 						if (mSupport) {
 							((android.support.v4.app.FragmentActivity) getActivityObject()).runOnUiThread(aCode);
 							
@@ -178,37 +182,33 @@ public abstract class Task<Params, Progress, Result> implements ITask {
 						}
 						
 						if (aMethod.equals("onPostExecute") || aMethod.equals("onCancelled")) {
-							for (int i=0; i < oOngoing.size(); i++) {
-								if (oOngoing.get(i).equals(mCaller)) {
-									oOngoing.remove(i); break;
-								}
-							}
+							log("onAttachUI", "[" + mCaller + "] Cleaning up and closing this Task");
 							
-							// True = Remove Task from TaskManagers receiver list
-							return true;
+							mManager.removeTask(this);
+							mManager = null;
 						}
 					}
 					
 				} else {
-					log("run", "This task has finished. Canceling the call to " + aMethod + "()"); return true;
+					log("run", "[" + mCaller + "] This Task is no longer active, canceling the call to the method" + aMethod + "()");
 				}
+				
+			} else {
+				log("run", "[" + mCaller + "] The method " + aMethod + "() has already been executed, canceling this call");
 			}
-			
-			return false;
 		}
 	}
 	
 	private void runUIReady(Boolean aForce) {
 		if (aForce || mExecutedMethods.contains("onPreExecute")) {
-			log("AsyncTask", "Executing onUIReady()");
-			
+			log("run", "[" + mCaller + "] Executing method onUIReady()");
 			onUIReady();
 		}
 	}
 	
 	private void runUIPause(Boolean aForce) {
 		if (aForce || mExecutedMethods.contains("onUIReady")) {
-			log("AsyncTask", "Executing onUIPause()");
+			log("run", "[" + mCaller + "] Executing method onUIPause()");
 			onUIPause();
 		}
 	}
@@ -285,22 +285,14 @@ public abstract class Task<Params, Progress, Result> implements ITask {
         return cTask.getStatus();
     }
     
-    public Boolean execute(Params... params) {
-    	if (!oOngoing.contains(mCaller)) {
-    		log("execute", "Adding receiver for this Task");
-    		
-    		mManager.addTask(this);
-    		oOngoing.add(mCaller);
-    		
+    public void execute(Params... params) throws IllegalStateException {
+    	if (mManager != null && mManager.getTask(mCaller) == null) {
+    		mManager.addTask(mCaller, this);
     		cTask.execute(params);
     		
-    		return true;
-    		
     	} else {
-    		log("execute", "Another Task with the same name is already running in this activity!");
+    		throw new IllegalStateException("This task has either already been started, or has finished!");
     	}
-    	
-    	return false;
     }
 	
 	/* ###
@@ -319,7 +311,7 @@ public abstract class Task<Params, Progress, Result> implements ITask {
                         
                     }, SKIP_ALL);
                     
-                	log("AsyncTask", "Executing onPreExecute()");
+                    log("run", "[" + mCaller + "] Executing method onPreExecute()");
                     Task.this.onPreExecute();
                 }
             });
@@ -333,8 +325,9 @@ public abstract class Task<Params, Progress, Result> implements ITask {
 					
 				} catch (InterruptedException e) {}
 			}
+			
+			Task.log("run", "[" + Task.this.mCaller + "] Executing method doInBackground()");
 
-			log("AsyncTask", "Executing doInBackground()");
             return Task.this.doInBackground(params);
 		}
 		
@@ -342,7 +335,7 @@ public abstract class Task<Params, Progress, Result> implements ITask {
         protected void onProgressUpdate(final Progress... values) {
             run("onProgressUpdate", new Runnable() {
                 public void run() {
-                	log("AsyncTask", "Executing onProgressUpdate()");
+                	log("run", "[" + mCaller + "] Executing method onProgressUpdate()");
                     Task.this.onProgressUpdate(values);
                 }
                 
@@ -353,7 +346,7 @@ public abstract class Task<Params, Progress, Result> implements ITask {
         protected void onPostExecute(final Result result) {
             run("onPostExecute", new Runnable() {
                 public void run() {
-                	log("AsyncTask", "Executing onPostExecute()");
+                	log("run", "[" + mCaller + "] Executing method onPostExecute()");
                     Task.this.onPostExecute(result);
                 }
             });
@@ -363,7 +356,7 @@ public abstract class Task<Params, Progress, Result> implements ITask {
         protected void onCancelled() {
             run("onCancelled", new Runnable() {
                 public void run() {
-                	log("AsyncTask", "Executing onCancelled()");
+                	log("run", "[" + mCaller + "] Executing method onCancelled()");
                     Task.this.onCancelled();
                 }
             });

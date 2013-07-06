@@ -20,6 +20,6 @@
 package com.spazedog.lib.taskmanager;
 
 public interface ITask {
-	public Boolean onAttachUI();
-	public Boolean onDetachUI();
+	public void onAttachUI();
+	public void onDetachUI();
 }

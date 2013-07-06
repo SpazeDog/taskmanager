@@ -33,6 +33,11 @@ public class TaskManager extends Fragment implements IManager {
     protected final Object mLock = new Object();
     
     private ArrayList<ITask> mTasks = new ArrayList<ITask>();
+    private ArrayList<IDaemon> mDaemons = new ArrayList<IDaemon>();
+    
+    private ArrayList<String> mTaskKeys = new ArrayList<String>();
+    private ArrayList<String> mDaemonKeys = new ArrayList<String>();
+    
     protected Boolean mUIAttached = false;
     
     @Override
@@ -43,48 +48,121 @@ public class TaskManager extends Fragment implements IManager {
     
     @Override
     public void onResume() {
-        super.onResume();
-        
+    	super.onResume();
+    	
         synchronized (mLock) {
             mUIAttached = true;
 
-            ArrayList<ITask> lTasks = new ArrayList<ITask>();
-            
-            for (int i=0; i < mTasks.size(); i++) {
-                if (!mTasks.get(i).onAttachUI()) {
-                	lTasks.add( mTasks.get(i) );
-                }
+            if (mTasks.size() > 0) {
+	            for (int i=0; i < mTasks.size(); i++) {
+	                mTasks.get(i).onAttachUI();
+	            }
             }
             
-            mTasks = lTasks;
+            if (mDaemons.size() > 0) {
+	            for (int i=0; i < mDaemons.size(); i++) {
+	            	mDaemons.get(i).onResume();
+	            }
+            }
         }
     }
     
     @Override
     public void onPause() {
-        super.onPause();
-     
+    	super.onPause();
+    	
         synchronized (mLock) {
             mUIAttached = false;
             
-            ArrayList<ITask> lTasks = new ArrayList<ITask>();
-            
-            for (int i=0; i < mTasks.size(); i++) {
-                if (!mTasks.get(i).onDetachUI()) {
-                	lTasks.add( mTasks.get(i) );
-                }
+            if (mTasks.size() > 0) {
+	            for (int i=0; i < mTasks.size(); i++) {
+	                mTasks.get(i).onDetachUI();
+	            }
             }
             
-            mTasks = lTasks;
+            if (mDaemons.size() > 0) {
+	            for (int i=0; i < mDaemons.size(); i++) {
+	            	mDaemons.get(i).onPause();
+	            }
+            }
         }
     }
     
-    public void addTask(ITask aTask) {
+    @Override
+    public void addTask(String aTag, ITask aTask) {
         synchronized (mLock) {
-        	mTasks.add( (ITask) aTask );
+        	mTasks.add(aTask);
+        	mTaskKeys.add(aTag);
+        }
+    }
+    
+    @Override
+    public void removeTask(ITask aTask) {
+        synchronized (mLock) {
+            if (mTasks.size() > 0) {
+	            for (int i=0; i < mTasks.size(); i++) {
+	                if (mTasks.get(i) == aTask) {
+	                	mTasks.remove(i);
+	                	mTaskKeys.remove(i); break;
+	                }
+	            }
+            }
+        }
+    }
+    
+    @Override
+    public ITask getTask(String aTag) {
+        synchronized (mLock) {
+        	if (mTaskKeys.size() > 0) {
+        		for (int i=0; i < mTaskKeys.size(); i++) {
+        			if (mTaskKeys.get(i).equals(aTag)) {
+        				return mTasks.get(i);
+        			}
+        		}
+        	}
+        	
+        	return null;
+        }
+    }
+    
+    @Override
+    public void addDaemon(String aTag, IDaemon aDaemon) {
+        synchronized (mLock) {
+        	mDaemons.add(aDaemon);
+        	mDaemonKeys.add(aTag);
+        }
+    }
+    
+    @Override
+    public void removeDaemon(IDaemon aDaemon) {
+        synchronized (mLock) {
+            if (mDaemons.size() > 0) {
+	            for (int i=0; i < mDaemons.size(); i++) {
+	                if (mDaemons.get(i) == aDaemon) {
+	                	mDaemons.remove(i);
+	                	mDaemonKeys.remove(i);
+	                }
+	            }
+            }
+        }
+    }
+    
+    @Override
+    public IDaemon getDaemon(String aTag) {
+        synchronized (mLock) {
+        	if (mDaemonKeys.size() > 0) {
+        		for (int i=0; i < mDaemonKeys.size(); i++) {
+        			if (mDaemonKeys.get(i).equals(aTag)) {
+        				return mDaemons.get(i);
+        			}
+        		}
+        	}
+        	
+        	return null;
         }
     }
 
+    @Override
     public Boolean isUIAttached() {
     	return mUIAttached;
     }

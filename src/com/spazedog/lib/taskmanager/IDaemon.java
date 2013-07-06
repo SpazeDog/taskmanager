@@ -19,16 +19,7 @@
 
 package com.spazedog.lib.taskmanager;
 
-public interface IManager {
-	public final static String TAG = null;
-	
-	public void addTask(String aTag, ITask aReceiver);
-	public void removeTask(ITask aReceiver);
-	public ITask getTask(String aTag);
-	
-	public void addDaemon(String aTag, IDaemon aReceiver);
-	public void removeDaemon(IDaemon aReceiver);
-	public IDaemon getDaemon(String aTag);
-	
-	public Boolean isUIAttached();
+public interface IDaemon {
+	public void onPause();
+	public void onResume();
 }
