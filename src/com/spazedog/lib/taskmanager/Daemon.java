@@ -19,10 +19,13 @@
 
 package com.spazedog.lib.taskmanager;
 
+import java.util.ArrayList;
+
+import android.annotation.SuppressLint;
 import android.annotation.TargetApi;
 import android.os.Build;
 
-public abstract class Daemon implements IDaemon {
+public abstract class Daemon<Params, Result> implements IDaemon {
 	
 	public final static String TAG = "Thread";
 
@@ -32,11 +35,17 @@ public abstract class Daemon implements IDaemon {
 	
 	private Object mLock = new Object();
 	
-	private Runnable mRunnable;
-	
 	private Boolean mStarted = false;
 	
 	private String mTag;
+	
+	private Params mParams;
+	
+	private Boolean mSupport = false;
+	private Boolean mFragment = false;
+	private String mFragmentTag;
+	
+	private ArrayList<Runnable> mPendingMethods = new ArrayList<Runnable>();
 	
 	private static void log(String aMethod, String aMessage) {
 		Utils.log(TAG, aMethod, aMessage);
@@ -74,6 +83,9 @@ public abstract class Daemon implements IDaemon {
 	
 	public Daemon(android.support.v4.app.Fragment aFragment, String aTag) {
 		this(aFragment.getActivity(), aTag);
+		
+		mFragmentTag = aFragment.getTag();
+		mFragment = true;
 	}
 	
 	public Daemon(android.support.v4.app.FragmentActivity aActivity, String aTag) {
@@ -81,11 +93,15 @@ public abstract class Daemon implements IDaemon {
 		
 		mManager = Utils.getManager(aActivity);
 		mTag = aTag;
+		mSupport = true;
 	}
 	
 	@TargetApi(Build.VERSION_CODES.HONEYCOMB)
 	public Daemon(android.app.Fragment aFragment, String aTag) {
 		this(aFragment.getActivity(), aTag);
+		
+		mFragmentTag = aFragment.getTag();
+		mFragment = true;
 	}
 	
 	@TargetApi(Build.VERSION_CODES.HONEYCOMB)
@@ -96,10 +112,80 @@ public abstract class Daemon implements IDaemon {
 		mTag = aTag;
 	}
 	
-	protected abstract void run();
+	@SuppressLint("NewApi")
+	public Object getActivityObject() {
+		if (mSupport) 
+			return ((android.support.v4.app.Fragment) mManager).getActivity();
+		
+		return ((android.app.Fragment) mManager).getActivity();
+	}
 	
-	public final void run(Runnable runnable) {
-		mRunnable = runnable;
+	@SuppressLint("NewApi")
+	public Object getObject() {
+		if (mFragment && mFragmentTag != null) {
+			return getFragmentObject(mFragmentTag);
+			
+		} else if (!mFragment) {
+			return getActivityObject();
+		}
+		
+		return null;
+	}
+	
+	@SuppressLint("NewApi")
+	public Object getFragmentObject(String aTag) {
+		if (mSupport) 
+			return ((android.support.v4.app.Fragment) mManager).getActivity().getSupportFragmentManager().findFragmentByTag(aTag);
+		
+		return ((android.app.Fragment) mManager).getActivity().getFragmentManager().findFragmentByTag(aTag);
+	}
+	
+	@SuppressLint("NewApi")
+	public Object getFragmentObject(Integer aId) {
+		if (mSupport) 
+			return ((android.support.v4.app.Fragment) mManager).getActivity().getSupportFragmentManager().findFragmentById(aId);
+		
+		return ((android.app.Fragment) mManager).getActivity().getFragmentManager().findFragmentById(aId);
+	}
+	
+	protected abstract void doInBackground(Params params);
+	protected void receiver(Result result) {}
+	
+	protected final void sendToReceiver(final Result result) {
+        run(new Runnable() {
+            public void run() {
+                Daemon.this.receiver(result);
+            }
+        });
+	}
+	
+	private void run(Runnable aCode) {
+		synchronized (mLock) {
+			if (mPendingMethods.size() > 0 || !mManager.isUIAttached()) {
+				mPendingMethods.add(aCode);
+				
+			} else {
+				if (mSupport) {
+					((android.support.v4.app.FragmentActivity) getActivityObject()).runOnUiThread(aCode);
+					
+				} else {
+					((android.app.Activity) getActivityObject()).runOnUiThread(aCode);
+				}
+			}
+		}
+	}
+	
+	private void runPending() {
+		synchronized (mLock) {
+			if (mPendingMethods.size() > 0) {
+				ArrayList<Runnable> pending = mPendingMethods;
+				mPendingMethods = new ArrayList<Runnable>();
+				
+				while (pending.size() > 0) {
+					run(pending.remove(0));
+				}
+			}
+		}
 	}
 	
 	public final void destroy() {
@@ -109,7 +195,6 @@ public abstract class Daemon implements IDaemon {
 			stop();
 
 			mManager = null;
-			mRunnable = null;
 		}
 	}
 	
@@ -120,22 +205,33 @@ public abstract class Daemon implements IDaemon {
 			}
 			
 			mThread = null;
+			mParams = null;
+			
+			while (mPendingMethods.size() > 0) {
+				mPendingMethods.remove(0);
+			}
 		}
 	}
 	
 	public final void start() throws IllegalStateException {
-		start(1000, 0);
+		start(null, 1000, 0);
 	}
 	
-	public final void start(Integer timeout) throws IllegalStateException {
-		start(timeout, 0);
+	public final void start(Params params) throws IllegalStateException {
+		start(params, 1000, 0);
 	}
 	
-	public final void start(Integer timeout, Integer delay) throws IllegalStateException {
+	public final void start(Params params, Integer timeout) throws IllegalStateException {
+		start(params, timeout, 0);
+	}
+	
+	public final void start(Params params, Integer timeout, Integer delay) throws IllegalStateException {
 		synchronized (mLock) {
 			if (mThread == null && mManager != null && (mManager.getDaemon(mTag) == null || mStarted)) {
 				mThread = new DaemonThread(timeout, delay);
 				mThread.start();
+				
+				mParams = params;
 
 				if (!mStarted) {
 					mManager.addDaemon(mTag, this);
@@ -161,6 +257,8 @@ public abstract class Daemon implements IDaemon {
 	public final void onResume() {
 		synchronized (mLock) {
 			if (mThread != null) {
+				runPending();
+				
 				mThread.sendResume();
 			}
 		}
@@ -224,12 +322,7 @@ public abstract class Daemon implements IDaemon {
 						mDelay = 0;
 					}
                 	
-					if (mRunnable != null) {
-						mRunnable.run();
-						
-					} else {
-						Daemon.this.run();
-					}
+					Daemon.this.doInBackground(Daemon.this.mParams);
                 	
                 	Thread.sleep(mTimeout);
                 	

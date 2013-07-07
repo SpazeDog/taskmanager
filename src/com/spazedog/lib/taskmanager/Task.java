@@ -41,12 +41,11 @@ public abstract class Task<Params, Progress, Result> implements ITask {
 	
 	private String mCaller;
 	
-	private String mFragmentTag;
-	
 	private IManager mManager;
 	
 	private Boolean mSupport = false;
 	private Boolean mFragment = false;
+	private String mFragmentTag;
 	
 	protected final Object mLock = new Object();
 	
