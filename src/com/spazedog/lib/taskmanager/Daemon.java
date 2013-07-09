@@ -39,10 +39,13 @@ public abstract class Daemon<Params, Result> implements IDaemon {
 	
 	private String mTag;
 	
-	private Params mParams;
+	private Params[] mParams;
 	
 	private Boolean mSupport = false;
 	private Boolean mFragment = false;
+	
+	private Integer mTimeout = 1000;
+	private Integer mDelay = 0;
 	
 	private ArrayList<Runnable> mPendingMethods = new ArrayList<Runnable>();
 	
@@ -157,7 +160,7 @@ public abstract class Daemon<Params, Result> implements IDaemon {
 		return null;
 	}
 	
-	protected abstract void doInBackground(Params params);
+	protected abstract void doInBackground(Params... params);
 	protected void receiver(Result result) {}
 	
 	protected final void sendToReceiver(final Result result) {
@@ -197,6 +200,19 @@ public abstract class Daemon<Params, Result> implements IDaemon {
 		}
 	}
 	
+	public final Daemon<Params, Result> setTimeout(Integer aTimeout) {
+		mTimeout = aTimeout;
+		
+		return this;
+	}
+	
+	public final Daemon<Params, Result> setTimeout(Integer aTimeout, Integer aDelay) {
+		mTimeout = aTimeout;
+		mDelay = aDelay;
+		
+		return this;
+	}
+	
 	public final void destroy() {
 		synchronized (mLock) {
             if (mManager != null) {
@@ -224,22 +240,10 @@ public abstract class Daemon<Params, Result> implements IDaemon {
 		}
 	}
 	
-	public final void start() throws IllegalStateException {
-		start(null, 1000, 0);
-	}
-	
-	public final void start(Params params) throws IllegalStateException {
-		start(params, 1000, 0);
-	}
-	
-	public final void start(Params params, Integer timeout) throws IllegalStateException {
-		start(params, timeout, 0);
-	}
-	
-	public final void start(Params params, Integer timeout, Integer delay) throws IllegalStateException {
+	public final void start(Params... params) throws IllegalStateException {
 		synchronized (mLock) {
 			if (mThread == null && mManager != null && (mManager.getDaemon(mTag) == null || mStarted)) {
-				mThread = new DaemonThread(timeout, delay);
+				mThread = new DaemonThread(mTimeout, mDelay);
 				mThread.start();
 				
 				mParams = params;
@@ -283,9 +287,6 @@ public abstract class Daemon<Params, Result> implements IDaemon {
         private Boolean mPaused = false;
         private Boolean mRunning = false;
         private Boolean mStopped = false;
-        
-        private Integer mTimeout;
-        private Integer mDelay;
 
         private Object mLock = new Object();
         
@@ -332,14 +333,14 @@ public abstract class Daemon<Params, Result> implements IDaemon {
             try {
 				while (!mStopped) {
 					if ((int) mDelay > 0) {
-						Thread.sleep(mDelay);
+						Thread.sleep(Daemon.this.mDelay);
 						
 						mDelay = 0;
 					}
                 	
 					Daemon.this.doInBackground(Daemon.this.mParams);
                 	
-                	Thread.sleep(mTimeout);
+                	Thread.sleep(Daemon.this.mTimeout);
                 	
                 	synchronized (mLock) {
                 		while (mPaused) {
