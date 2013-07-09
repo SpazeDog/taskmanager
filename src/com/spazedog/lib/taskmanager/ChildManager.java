@@ -22,35 +22,90 @@ package com.spazedog.lib.taskmanager;
 import java.util.HashMap;
 import java.util.Map;
 
-import android.os.Bundle;
-import android.support.v4.app.Fragment;
+import android.annotation.TargetApi;
+import android.app.Activity;
+import android.app.Fragment;
+import android.os.Build;
 
-public class SupportTaskManager extends Fragment implements IManager, IParentManager {
-	public final static String TAG = "TaskManager_Fragment_Support";
+@TargetApi(Build.VERSION_CODES.JELLY_BEAN_MR1)
+public class ChildManager extends Fragment implements IManager {
+	/*
+	 * Nested fragments cannot use the Retain Instance option.
+	 * So we use a child manager on fragments and use the activity's manager to store our Task and Daemon instances
+	 */
+	
+	public final static String TAG = "TaskManager_ChildFragment";
+	
+	private IParentManager mManager;
+	
+	private String mName;
+	
+    private Map<String, ITask> mTasks = new HashMap<String, ITask>();
+    private Map<String, IDaemon> mDaemons = new HashMap<String, IDaemon>();
+	
+	protected Boolean mUIAttached = false;
 	
     protected final Object mLock = new Object();
     
-    private Map<String, ITask> mTasks = new HashMap<String, ITask>();
-    private Map<String, IDaemon> mDaemons = new HashMap<String, IDaemon>();
-    
-    private Map<String, Map<String, ITask>> mChildTasks = new HashMap<String, Map<String, ITask>>();
-    private Map<String, Map<String, IDaemon>> mChildDaemons = new HashMap<String, Map<String, IDaemon>>();
-    
-    protected Boolean mUIAttached = false;
-    
 	private static void log(String aMethod, String aMessage) {
-		Utils.log("Fragment", aMethod, aMessage);
+		Utils.log("ChildFragment", aMethod, aMessage);
 	}
     
     @Override
-    public void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-        setRetainInstance(true);
+    public void onAttach(Activity activity) {
+    	super.onAttach(activity);
+    	
+    	mName = getParentFragment().getClass().getName();
+    }
+	
+    @Override
+    public void onStart() {
+    	super.onStart();
+    	
+    	mManager = (IParentManager) Utils.getManager(getActivity());
+    	
+    	synchronized (mLock) {
+    		Map<String, ITask> tasks = mManager.getChildTasks(mName);
+    		if (tasks != null) {
+    			log("onStart", "Restoring " + tasks.size() + " tasks to the task list");
+    			
+    			for (String key : tasks.keySet()) {
+    				mTasks.put(key, tasks.remove(key));
+    			}
+    		}
+    		
+    		Map<String, IDaemon> daemons = mManager.getChildDaemons(mName);
+    		if (daemons != null) {
+    			log("onStart", "Restoring " + daemons.size() + " daemons to the task list");
+    			
+    			for (String key : daemons.keySet()) {
+    				mDaemons.put(key, daemons.remove(key));
+    			}
+    		}
+    	}
     }
     
     @Override
-    public void onDestroy() {
-    	super.onDestroy();
+    public void onStop() {
+    	super.onStart();
+    	
+    	synchronized (mLock) {
+	    	if (mTasks.size() > 0) {
+	    		log("onStop", "Saving " + mTasks.size() + " tasks to the parent TaskManager");
+	    		
+	    		mManager.addChildTasks(mName, mTasks);
+	    	}
+	    	
+	    	if (mDaemons.size() > 0)
+	    		log("onStop", "Saving " + mDaemons.size() + " daemons to the parent TaskManager");
+	    	
+	    		mManager.addChildDaemons(mName, mDaemons);
+	    	
+	    	mTasks = new HashMap<String, ITask>();
+	    	mDaemons = new HashMap<String, IDaemon>();
+    	}
+    	
+    	mManager = null;
     }
     
     @Override
@@ -102,7 +157,7 @@ public class SupportTaskManager extends Fragment implements IManager, IParentMan
             }
     	}
     }
-    
+
     @Override
     public void addTask(String aTag, ITask aTask) {
         synchronized (mLock) {
@@ -157,32 +212,4 @@ public class SupportTaskManager extends Fragment implements IManager, IParentMan
     public Boolean isUIAttached() {
     	return mUIAttached;
     }
-
-	@Override
-	public void addChildTasks(String aClass, Map<String, ITask> aTasks) {
-		log("addChildTasks", "Storing child tasks from " + aClass);
-		
-		mChildTasks.put(aClass, aTasks);
-	}
-
-	@Override
-	public Map<String, ITask> getChildTasks(String aClass) {
-		log("getChildTasks", "Returning child tasks to " + aClass);
-		
-		return mChildTasks.remove(aClass);
-	}
-
-	@Override
-	public void addChildDaemons(String aClass, Map<String, IDaemon> aDaemons) {
-		log("addChildTasks", "Storing child daemons from " + aClass);
-		
-		mChildDaemons.put(aClass, aDaemons);
-	}
-
-	@Override
-	public Map<String, IDaemon> getChildDaemons(String aClass) {
-		log("getChildDaemons", "Returning child daemons to " + aClass);
-		
-		return mChildDaemons.remove(aClass);
-	}
 }

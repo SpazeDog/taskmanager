@@ -19,7 +19,12 @@
 
 package com.spazedog.lib.taskmanager;
 
-public interface ITask {
-	public void onAttachUI(IManager manager);
-	public void onDetachUI();
+import java.util.Map;
+
+public interface IParentManager {
+	public void addChildTasks(String aClass, Map<String, ITask> aTasks);
+	public Map<String, ITask> getChildTasks(String aClass);
+	
+	public void addChildDaemons(String aClass, Map<String, IDaemon> aDaemons);
+	public Map<String, IDaemon> getChildDaemons(String aClass);
 }

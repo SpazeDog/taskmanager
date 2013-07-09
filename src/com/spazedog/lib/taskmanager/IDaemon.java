@@ -21,5 +21,5 @@ package com.spazedog.lib.taskmanager;
 
 public interface IDaemon {
 	public void onPause();
-	public void onResume();
+	public void onResume(IManager manager);
 }

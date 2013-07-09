@@ -43,7 +43,6 @@ public abstract class Daemon<Params, Result> implements IDaemon {
 	
 	private Boolean mSupport = false;
 	private Boolean mFragment = false;
-	private String mFragmentTag;
 	
 	private ArrayList<Runnable> mPendingMethods = new ArrayList<Runnable>();
 	
@@ -52,7 +51,13 @@ public abstract class Daemon<Params, Result> implements IDaemon {
 	}
 	
 	public final static IDaemon getDaemon(android.support.v4.app.Fragment aFragment, String aTag) {
-		return getDaemon(aFragment.getActivity(), aTag);
+		IManager lManager = Utils.getManager(aFragment);
+		
+		if (lManager != null) {
+			return lManager.getDaemon(aTag);
+		}
+		
+		return null;
 	}
 	
 	public final static IDaemon getDaemon(android.support.v4.app.FragmentActivity aActivity, String aTag) {
@@ -65,9 +70,15 @@ public abstract class Daemon<Params, Result> implements IDaemon {
 		return null;
 	}
 	
-	@TargetApi(Build.VERSION_CODES.HONEYCOMB)
+	@TargetApi(Build.VERSION_CODES.JELLY_BEAN_MR1)
 	public final static IDaemon getDaemon(android.app.Fragment aFragment, String aTag) {
-		return getDaemon(aFragment.getActivity(), aTag);
+		IManager lManager = Utils.getManager(aFragment);
+		
+		if (lManager != null) {
+			return lManager.getDaemon(aTag);
+		}
+		
+		return null;
 	}
 	
 	@TargetApi(Build.VERSION_CODES.HONEYCOMB)
@@ -82,9 +93,11 @@ public abstract class Daemon<Params, Result> implements IDaemon {
 	}
 	
 	public Daemon(android.support.v4.app.Fragment aFragment, String aTag) {
-		this(aFragment.getActivity(), aTag);
+		log("construct", "[" + aTag + "] Initiating a new Daemon");
 		
-		mFragmentTag = aFragment.getTag();
+		mManager = Utils.getManager(aFragment);
+		mTag = aTag;
+		mSupport = true;
 		mFragment = true;
 	}
 	
@@ -98,9 +111,10 @@ public abstract class Daemon<Params, Result> implements IDaemon {
 	
 	@TargetApi(Build.VERSION_CODES.HONEYCOMB)
 	public Daemon(android.app.Fragment aFragment, String aTag) {
-		this(aFragment.getActivity(), aTag);
+		log("construct", "[" + aTag + "] Initiating a new Daemon");
 		
-		mFragmentTag = aFragment.getTag();
+		mManager = Utils.getManager(aFragment);
+		mTag = aTag;
 		mFragment = true;
 	}
 	
@@ -114,38 +128,33 @@ public abstract class Daemon<Params, Result> implements IDaemon {
 	
 	@SuppressLint("NewApi")
 	public Object getActivityObject() {
-		if (mSupport) 
-			return ((android.support.v4.app.Fragment) mManager).getActivity();
+        if (mManager != null) {
+		    if (mSupport) 
+			    return ((android.support.v4.app.Fragment) mManager).getActivity();
 		
-		return ((android.app.Fragment) mManager).getActivity();
+		    return ((android.app.Fragment) mManager).getActivity();
+        }
+
+        return null;
 	}
 	
 	@SuppressLint("NewApi")
 	public Object getObject() {
-		if (mFragment && mFragmentTag != null) {
-			return getFragmentObject(mFragmentTag);
+        if (mManager != null) {
+		    if (mFragment) {
+			    if (mSupport) {
+				    return ((android.support.v4.app.Fragment) mManager).getParentFragment();
+				
+			    } else {
+				    return ((android.app.Fragment) mManager).getParentFragment();
+			    }
 			
-		} else if (!mFragment) {
-			return getActivityObject();
-		}
+		    } else {
+			    return getActivityObject();
+		    }
+        }
 		
 		return null;
-	}
-	
-	@SuppressLint("NewApi")
-	public Object getFragmentObject(String aTag) {
-		if (mSupport) 
-			return ((android.support.v4.app.Fragment) mManager).getActivity().getSupportFragmentManager().findFragmentByTag(aTag);
-		
-		return ((android.app.Fragment) mManager).getActivity().getFragmentManager().findFragmentByTag(aTag);
-	}
-	
-	@SuppressLint("NewApi")
-	public Object getFragmentObject(Integer aId) {
-		if (mSupport) 
-			return ((android.support.v4.app.Fragment) mManager).getActivity().getSupportFragmentManager().findFragmentById(aId);
-		
-		return ((android.app.Fragment) mManager).getActivity().getFragmentManager().findFragmentById(aId);
 	}
 	
 	protected abstract void doInBackground(Params params);
@@ -161,7 +170,7 @@ public abstract class Daemon<Params, Result> implements IDaemon {
 	
 	private void run(Runnable aCode) {
 		synchronized (mLock) {
-			if (mPendingMethods.size() > 0 || !mManager.isUIAttached()) {
+			if (mPendingMethods.size() > 0 || mManager == null || !mManager.isUIAttached()) {
 				mPendingMethods.add(aCode);
 				
 			} else {
@@ -190,11 +199,13 @@ public abstract class Daemon<Params, Result> implements IDaemon {
 	
 	public final void destroy() {
 		synchronized (mLock) {
-			mManager.removeDaemon(this);
+            if (mManager != null) {
+			    mManager.removeDaemon(mTag);
 			
-			stop();
+			    stop();
 
-			mManager = null;
+			    mManager = null;
+            }
 		}
 	}
 	
@@ -250,12 +261,16 @@ public abstract class Daemon<Params, Result> implements IDaemon {
 			if (mThread != null) {
 				mThread.sendPause();
 			}
+			
+			mManager = null;
 		}
 	}
 	
 	@Override
-	public final void onResume() {
+	public final void onResume(IManager manager) {
 		synchronized (mLock) {
+			mManager = manager;
+			
 			if (mThread != null) {
 				runPending();
 				

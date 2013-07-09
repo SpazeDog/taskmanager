@@ -45,7 +45,6 @@ public abstract class Task<Params, Progress, Result> implements ITask {
 	
 	private Boolean mSupport = false;
 	private Boolean mFragment = false;
-	private String mFragmentTag;
 	
 	protected final Object mLock = new Object();
 	
@@ -57,7 +56,13 @@ public abstract class Task<Params, Progress, Result> implements ITask {
 	}
 	
 	public final static ITask getTask(android.support.v4.app.Fragment aFragment, String aTag) {
-		return getTask(aFragment.getActivity(), aTag);
+		IManager lManager = Utils.getManager(aFragment);
+		
+		if (lManager != null) {
+			return lManager.getTask(aTag);
+		}
+		
+		return null;
 	}
 	
 	public final static ITask getTask(android.support.v4.app.FragmentActivity aActivity, String aTag) {
@@ -70,9 +75,15 @@ public abstract class Task<Params, Progress, Result> implements ITask {
 		return null;
 	}
 	
-	@TargetApi(Build.VERSION_CODES.HONEYCOMB)
+	@TargetApi(Build.VERSION_CODES.JELLY_BEAN_MR1)
 	public final static ITask getTask(android.app.Fragment aFragment, String aTag) {
-		return getTask(aFragment.getActivity(), aTag);
+		IManager lManager = Utils.getManager(aFragment);
+		
+		if (lManager != null) {
+			return lManager.getTask(aTag);
+		}
+		
+		return null;
 	}
 	
 	@TargetApi(Build.VERSION_CODES.HONEYCOMB)
@@ -87,9 +98,11 @@ public abstract class Task<Params, Progress, Result> implements ITask {
 	}
 	
 	public Task(android.support.v4.app.Fragment aFragment, String aTag) {
-		this(aFragment.getActivity(), aTag);
+		log("construct", "[" + aTag + "] Initiating a new Task");
 		
-		mFragmentTag = aFragment.getTag();
+		mCaller = aTag;
+		mManager = Utils.getManager(aFragment);
+		mSupport = true;
 		mFragment = true;
 	}
 	
@@ -103,9 +116,10 @@ public abstract class Task<Params, Progress, Result> implements ITask {
 	
 	@TargetApi(Build.VERSION_CODES.HONEYCOMB)
 	public Task(android.app.Fragment aFragment, String aTag) {
-		this(aFragment.getActivity(), aTag);
+		log("construct", "[" + aTag + "] Initiating a new Task");
 		
-		mFragmentTag = aFragment.getTag();
+		mCaller = aTag;
+		mManager = Utils.getManager(aFragment);
 		mFragment = true;
 	}
 	
@@ -118,9 +132,11 @@ public abstract class Task<Params, Progress, Result> implements ITask {
 	}
 	
 	@Override
-	public void onAttachUI() {
+	public void onAttachUI(IManager manager) {
 		synchronized (mLock) {
 			log("onAttachUI", "[" + mCaller + "] Entering UI state");
+			
+			mManager = manager;
 			
             run("onUIReady", new Runnable() {
                 public void run() {
@@ -151,6 +167,8 @@ public abstract class Task<Params, Progress, Result> implements ITask {
                 }
                 
             }, SKIP_ALL);
+			
+			mManager = null;
 		}
 	}
 	
@@ -164,11 +182,11 @@ public abstract class Task<Params, Progress, Result> implements ITask {
 		synchronized (mLock) {
 			if (aAction > RUN_NORMAL || !mExecutedMethods.contains(aMethod)) {
 				if (!mExecutedMethods.contains("onPostExecute") && !mExecutedMethods.contains("onCancelled")) {
-					if (aAction < SKIP_ALL && (mPendingMethods.size() > 0 || !mManager.isUIAttached())) {
+					if (aAction < SKIP_ALL && (mPendingMethods.size() > 0 || mManager == null || !mManager.isUIAttached())) {
 						log("run", "[" + mCaller + "] The UI is currently not pressent, adding method " + aMethod + "() to the pending list");
 						mPendingMethods.put(aMethod, aCode);
 						
-					} else if (aAction == SKIP_ALL || mManager.isUIAttached()) {
+					} else if (aAction == SKIP_ALL || (mManager != null && mManager.isUIAttached())) {
 						if (mSupport) {
 							((android.support.v4.app.FragmentActivity) getActivityObject()).runOnUiThread(aCode);
 							
@@ -183,7 +201,7 @@ public abstract class Task<Params, Progress, Result> implements ITask {
 						if (aMethod.equals("onPostExecute") || aMethod.equals("onCancelled")) {
 							log("onAttachUI", "[" + mCaller + "] Cleaning up and closing this Task");
 							
-							mManager.removeTask(this);
+							mManager.removeTask(mCaller);
 							mManager = null;
 						}
 					}
@@ -214,38 +232,33 @@ public abstract class Task<Params, Progress, Result> implements ITask {
 	
 	@SuppressLint("NewApi")
 	public Object getActivityObject() {
-		if (mSupport) 
-			return ((android.support.v4.app.Fragment) mManager).getActivity();
+        if (mManager != null) {
+		    if (mSupport) 
+			    return ((android.support.v4.app.Fragment) mManager).getActivity();
 		
-		return ((android.app.Fragment) mManager).getActivity();
+		    return ((android.app.Fragment) mManager).getActivity();
+        }
+
+        return null;
 	}
 	
 	@SuppressLint("NewApi")
 	public Object getObject() {
-		if (mFragment && mFragmentTag != null) {
-			return getFragmentObject(mFragmentTag);
+        if (mManager != null) {
+		    if (mFragment) {
+			    if (mSupport) {
+				    return ((android.support.v4.app.Fragment) mManager).getParentFragment();
+				
+			    } else {
+				    return ((android.app.Fragment) mManager).getParentFragment();
+			    }
 			
-		} else if (!mFragment) {
-			return getActivityObject();
-		}
+		    } else {
+			    return getActivityObject();
+		    }
+        }
 		
 		return null;
-	}
-	
-	@SuppressLint("NewApi")
-	public Object getFragmentObject(String aTag) {
-		if (mSupport) 
-			return ((android.support.v4.app.Fragment) mManager).getActivity().getSupportFragmentManager().findFragmentByTag(aTag);
-		
-		return ((android.app.Fragment) mManager).getActivity().getFragmentManager().findFragmentByTag(aTag);
-	}
-	
-	@SuppressLint("NewApi")
-	public Object getFragmentObject(Integer aId) {
-		if (mSupport) 
-			return ((android.support.v4.app.Fragment) mManager).getActivity().getSupportFragmentManager().findFragmentById(aId);
-		
-		return ((android.app.Fragment) mManager).getActivity().getFragmentManager().findFragmentById(aId);
 	}
 	
 	/* ###
