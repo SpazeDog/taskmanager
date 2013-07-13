@@ -45,6 +45,8 @@ public abstract class Daemon<Params, Result> implements IDaemon {
 	private Boolean mSupport = false;
 	private Boolean mFragment = false;
 	
+	protected Boolean mReady = true;
+	
 	private Integer mTimeout = 1000;
 	private Integer mDelay = 0;
 	
@@ -263,21 +265,38 @@ public abstract class Daemon<Params, Result> implements IDaemon {
 	@Override
 	public final void onPause() {
 		synchronized (mLock) {
-			if (mThread != null) {
-				mThread.sendPause();
+			log("onPause", "[" + mTag + "] Entering Pause state");
+			
+			if (mReady) {
+				if (mThread != null) {
+					mThread.sendPause();
+				}
+				
+			} else {
+				log("onPause", "[" + mTag + "] The onResume() has not yet been executed, skipping");
 			}
 		}
 	}
-	
+
 	@Override
 	public final void onResume(IManager manager) {
 		synchronized (mLock) {
-			mManager = new WeakReference<IManager>(manager);
+			log("onResume", "[" + mTag + "] Entering Resume state");
 			
-			if (mThread != null) {
-				runPending();
+			mManager = new WeakReference<IManager>(manager);
+			mReady = false;
+			
+			if (getActivityObject() != null) {
+				mReady = true;
 				
-				mThread.sendResume();
+				if (mThread != null) {
+					runPending();
+					
+					mThread.sendResume();
+				}
+				
+			} else {
+				log("onResume", "[" + mTag + "] The UI is not ready, skipping");
 			}
 		}
 	}

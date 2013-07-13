@@ -48,6 +48,7 @@ public abstract class Task<Params, Progress, Result> implements ITask {
 	private Boolean mFragment = false;
 	
 	protected final Object mLock = new Object();
+	protected Boolean mReady = true;
 	
 	private Map<String, Runnable> mPendingMethods = new HashMap<String, Runnable>();
 	private final ArrayList<String> mExecutedMethods = new ArrayList<String>();
@@ -138,21 +139,29 @@ public abstract class Task<Params, Progress, Result> implements ITask {
 			log("onAttachUI", "[" + mCaller + "] Entering UI state");
 			
 			mManager = new WeakReference<IManager>(manager);
+			mReady = false;
 			
-            run("onUIReady", new Runnable() {
-                public void run() {
-                	Task.this.runUIReady(false);
-                }
-                
-            }, SKIP_ALL);
-			
-			if (mPendingMethods.size() > 0) {
-				Map<String, Runnable> lPending = mPendingMethods;
-				mPendingMethods = new HashMap<String, Runnable>();
+			if (getActivityObject() != null) {
+				mReady = true;
 				
-				for (String name : lPending.keySet()) {
-					run(name, lPending.get(name));
+	            run("onUIReady", new Runnable() {
+	                public void run() {
+	                	Task.this.runUIReady(false);
+	                }
+	                
+	            }, SKIP_ALL);
+				
+				if (mPendingMethods.size() > 0) {
+					Map<String, Runnable> lPending = mPendingMethods;
+					mPendingMethods = new HashMap<String, Runnable>();
+					
+					for (String name : lPending.keySet()) {
+						run(name, lPending.get(name));
+					}
 				}
+				
+			} else {
+				log("onAttachUI", "[" + mCaller + "] The UI state is not ready, skipping");
 			}
 		}
 	}
@@ -162,12 +171,17 @@ public abstract class Task<Params, Progress, Result> implements ITask {
 		synchronized (mLock) {
 			log("onDetachUI", "[" + mCaller + "] Leaving UI state");
 			
-			run("onUIPause", new Runnable() {
-                public void run() {
-                	Task.this.runUIPause(false);
-                }
-                
-            }, SKIP_ALL);
+			if (mReady) {
+				run("onUIPause", new Runnable() {
+	                public void run() {
+	                	Task.this.runUIPause(false);
+	                }
+	                
+	            }, SKIP_ALL);
+				
+			} else {
+				log("onDetachUI", "[" + mCaller + "] The onAttachUI() has not yet been executed, skipping");
+			}
 		}
 	}
 	
