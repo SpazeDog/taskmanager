@@ -19,6 +19,7 @@
 
 package com.spazedog.lib.taskmanager;
 
+import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
@@ -41,7 +42,7 @@ public abstract class Task<Params, Progress, Result> implements ITask {
 	
 	private String mCaller;
 	
-	private IManager mManager;
+	private WeakReference<IManager> mManager;
 	
 	private Boolean mSupport = false;
 	private Boolean mFragment = false;
@@ -101,7 +102,7 @@ public abstract class Task<Params, Progress, Result> implements ITask {
 		log("construct", "[" + aTag + "] Initiating a new Task");
 		
 		mCaller = aTag;
-		mManager = Utils.getManager(aFragment);
+		mManager = new WeakReference<IManager>(Utils.getManager(aFragment));
 		mSupport = true;
 		mFragment = true;
 	}
@@ -110,7 +111,7 @@ public abstract class Task<Params, Progress, Result> implements ITask {
 		log("construct", "[" + aTag + "] Initiating a new Task");
 		
 		mCaller = aTag;
-		mManager = Utils.getManager(aActivity);
+		mManager = new WeakReference<IManager>(Utils.getManager(aActivity));
 		mSupport = true;
 	}
 	
@@ -119,7 +120,7 @@ public abstract class Task<Params, Progress, Result> implements ITask {
 		log("construct", "[" + aTag + "] Initiating a new Task");
 		
 		mCaller = aTag;
-		mManager = Utils.getManager(aFragment);
+		mManager = new WeakReference<IManager>(Utils.getManager(aFragment));
 		mFragment = true;
 	}
 	
@@ -128,7 +129,7 @@ public abstract class Task<Params, Progress, Result> implements ITask {
 		log("construct", "[" + aTag + "] Initiating a new Task");
 		
 		mCaller = aTag;
-		mManager = Utils.getManager(aActivity);
+		mManager = new WeakReference<IManager>(Utils.getManager(aActivity));
 	}
 	
 	@Override
@@ -136,7 +137,7 @@ public abstract class Task<Params, Progress, Result> implements ITask {
 		synchronized (mLock) {
 			log("onAttachUI", "[" + mCaller + "] Entering UI state");
 			
-			mManager = manager;
+			mManager = new WeakReference<IManager>(manager);
 			
             run("onUIReady", new Runnable() {
                 public void run() {
@@ -167,8 +168,6 @@ public abstract class Task<Params, Progress, Result> implements ITask {
                 }
                 
             }, SKIP_ALL);
-			
-			mManager = null;
 		}
 	}
 	
@@ -182,11 +181,11 @@ public abstract class Task<Params, Progress, Result> implements ITask {
 		synchronized (mLock) {
 			if (aAction > RUN_NORMAL || !mExecutedMethods.contains(aMethod)) {
 				if (!mExecutedMethods.contains("onPostExecute") && !mExecutedMethods.contains("onCancelled")) {
-					if (aAction < SKIP_ALL && (mPendingMethods.size() > 0 || mManager == null || !mManager.isUIAttached())) {
+					if (aAction < SKIP_ALL && (mPendingMethods.size() > 0 || mManager == null || mManager.get() == null || !mManager.get().isUIAttached())) {
 						log("run", "[" + mCaller + "] The UI is currently not pressent, adding method " + aMethod + "() to the pending list");
 						mPendingMethods.put(aMethod, aCode);
 						
-					} else if (aAction == SKIP_ALL || (mManager != null && mManager.isUIAttached())) {
+					} else if (aAction == SKIP_ALL || (mManager != null && mManager.get() != null && mManager.get().isUIAttached())) {
 						if (mSupport) {
 							((android.support.v4.app.FragmentActivity) getActivityObject()).runOnUiThread(aCode);
 							
@@ -201,7 +200,7 @@ public abstract class Task<Params, Progress, Result> implements ITask {
 						if (aMethod.equals("onPostExecute") || aMethod.equals("onCancelled")) {
 							log("onAttachUI", "[" + mCaller + "] Cleaning up and closing this Task");
 							
-							mManager.removeTask(mCaller);
+							mManager.get().removeTask(mCaller);
 							mManager = null;
 						}
 					}
@@ -234,9 +233,9 @@ public abstract class Task<Params, Progress, Result> implements ITask {
 	public Object getActivityObject() {
         if (mManager != null) {
 		    if (mSupport) 
-			    return ((android.support.v4.app.Fragment) mManager).getActivity();
+			    return ((android.support.v4.app.Fragment) mManager.get()).getActivity();
 		
-		    return ((android.app.Fragment) mManager).getActivity();
+		    return ((android.app.Fragment) mManager.get()).getActivity();
         }
 
         return null;
@@ -247,10 +246,10 @@ public abstract class Task<Params, Progress, Result> implements ITask {
         if (mManager != null) {
 		    if (mFragment) {
 			    if (mSupport) {
-				    return ((android.support.v4.app.Fragment) mManager).getParentFragment();
+				    return ((android.support.v4.app.Fragment) mManager.get()).getParentFragment();
 				
 			    } else {
-				    return ((android.app.Fragment) mManager).getParentFragment();
+				    return ((android.app.Fragment) mManager.get()).getParentFragment();
 			    }
 			
 		    } else {
@@ -298,8 +297,8 @@ public abstract class Task<Params, Progress, Result> implements ITask {
     }
     
     public void execute(Params... params) throws IllegalStateException {
-    	if (mManager != null && mManager.getTask(mCaller) == null) {
-    		mManager.addTask(mCaller, this);
+    	if (mManager != null && mManager.get().getTask(mCaller) == null) {
+    		mManager.get().addTask(mCaller, this);
     		cTask.execute(params);
     		
     	} else {

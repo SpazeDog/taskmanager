@@ -19,6 +19,7 @@
 
 package com.spazedog.lib.taskmanager;
 
+import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 
 import android.annotation.SuppressLint;
@@ -31,7 +32,7 @@ public abstract class Daemon<Params, Result> implements IDaemon {
 
 	private DaemonThread mThread;
 	
-	private IManager mManager;
+	private WeakReference<IManager> mManager;
 	
 	private Object mLock = new Object();
 	
@@ -98,7 +99,7 @@ public abstract class Daemon<Params, Result> implements IDaemon {
 	public Daemon(android.support.v4.app.Fragment aFragment, String aTag) {
 		log("construct", "[" + aTag + "] Initiating a new Daemon");
 		
-		mManager = Utils.getManager(aFragment);
+		mManager = new WeakReference<IManager>(Utils.getManager(aFragment));
 		mTag = aTag;
 		mSupport = true;
 		mFragment = true;
@@ -107,7 +108,7 @@ public abstract class Daemon<Params, Result> implements IDaemon {
 	public Daemon(android.support.v4.app.FragmentActivity aActivity, String aTag) {
 		log("construct", "[" + aTag + "] Initiating a new Daemon");
 		
-		mManager = Utils.getManager(aActivity);
+		mManager = new WeakReference<IManager>(Utils.getManager(aActivity));
 		mTag = aTag;
 		mSupport = true;
 	}
@@ -116,7 +117,7 @@ public abstract class Daemon<Params, Result> implements IDaemon {
 	public Daemon(android.app.Fragment aFragment, String aTag) {
 		log("construct", "[" + aTag + "] Initiating a new Daemon");
 		
-		mManager = Utils.getManager(aFragment);
+		mManager = new WeakReference<IManager>(Utils.getManager(aFragment));
 		mTag = aTag;
 		mFragment = true;
 	}
@@ -125,7 +126,7 @@ public abstract class Daemon<Params, Result> implements IDaemon {
 	public Daemon(android.app.Activity aActivity, String aTag) {
 		log("construct", "[" + aTag + "] Initiating a new Daemon");
 		
-		mManager = Utils.getManager(aActivity);
+		mManager = new WeakReference<IManager>(Utils.getManager(aActivity));
 		mTag = aTag;
 	}
 	
@@ -133,9 +134,9 @@ public abstract class Daemon<Params, Result> implements IDaemon {
 	public Object getActivityObject() {
         if (mManager != null) {
 		    if (mSupport) 
-			    return ((android.support.v4.app.Fragment) mManager).getActivity();
+			    return ((android.support.v4.app.Fragment) mManager.get()).getActivity();
 		
-		    return ((android.app.Fragment) mManager).getActivity();
+		    return ((android.app.Fragment) mManager.get()).getActivity();
         }
 
         return null;
@@ -146,10 +147,10 @@ public abstract class Daemon<Params, Result> implements IDaemon {
         if (mManager != null) {
 		    if (mFragment) {
 			    if (mSupport) {
-				    return ((android.support.v4.app.Fragment) mManager).getParentFragment();
+				    return ((android.support.v4.app.Fragment) mManager.get()).getParentFragment();
 				
 			    } else {
-				    return ((android.app.Fragment) mManager).getParentFragment();
+				    return ((android.app.Fragment) mManager.get()).getParentFragment();
 			    }
 			
 		    } else {
@@ -173,7 +174,7 @@ public abstract class Daemon<Params, Result> implements IDaemon {
 	
 	private void run(Runnable aCode) {
 		synchronized (mLock) {
-			if (mPendingMethods.size() > 0 || mManager == null || !mManager.isUIAttached()) {
+			if (mPendingMethods.size() > 0 || mManager == null || !mManager.get().isUIAttached()) {
 				mPendingMethods.add(aCode);
 				
 			} else {
@@ -216,7 +217,7 @@ public abstract class Daemon<Params, Result> implements IDaemon {
 	public final void destroy() {
 		synchronized (mLock) {
             if (mManager != null) {
-			    mManager.removeDaemon(mTag);
+			    mManager.get().removeDaemon(mTag);
 			
 			    stop();
 
@@ -242,14 +243,14 @@ public abstract class Daemon<Params, Result> implements IDaemon {
 	
 	public final void start(Params... params) throws IllegalStateException {
 		synchronized (mLock) {
-			if (mThread == null && mManager != null && (mManager.getDaemon(mTag) == null || mStarted)) {
+			if (mThread == null && mManager != null && mManager.get() != null && (mManager.get().getDaemon(mTag) == null || mStarted)) {
 				mThread = new DaemonThread(mTimeout, mDelay);
 				mThread.start();
 				
 				mParams = params;
 
 				if (!mStarted) {
-					mManager.addDaemon(mTag, this);
+					mManager.get().addDaemon(mTag, this);
 					mStarted = true;
 				}
 				
@@ -265,15 +266,13 @@ public abstract class Daemon<Params, Result> implements IDaemon {
 			if (mThread != null) {
 				mThread.sendPause();
 			}
-			
-			mManager = null;
 		}
 	}
 	
 	@Override
 	public final void onResume(IManager manager) {
 		synchronized (mLock) {
-			mManager = manager;
+			mManager = new WeakReference<IManager>(manager);
 			
 			if (mThread != null) {
 				runPending();

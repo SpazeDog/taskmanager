@@ -19,6 +19,7 @@
 
 package com.spazedog.lib.taskmanager;
 
+import java.lang.ref.WeakReference;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -33,7 +34,7 @@ public class SupportChildManager extends Fragment implements IManager {
 	
 	public final static String TAG = "TaskManager_ChildFragment_Support";
 	
-	private IParentManager mManager;
+	private WeakReference<IParentManager> mManager;
 	
 	private String mName;
 	
@@ -59,10 +60,10 @@ public class SupportChildManager extends Fragment implements IManager {
     public void onStart() {
     	super.onStart();
     	
-    	mManager = (IParentManager) Utils.getManager(getActivity());
+    	mManager = new WeakReference<IParentManager>((IParentManager) Utils.getManager(getActivity()));
     	
     	synchronized (mLock) {
-    		Map<String, ITask> tasks = mManager.getChildTasks(mName);
+    		Map<String, ITask> tasks = mManager.get().getChildTasks(mName);
     		if (tasks != null) {
     			log("onStart", "Restoring " + tasks.size() + " tasks to the task list");
     			
@@ -71,7 +72,7 @@ public class SupportChildManager extends Fragment implements IManager {
     			}
     		}
     		
-    		Map<String, IDaemon> daemons = mManager.getChildDaemons(mName);
+    		Map<String, IDaemon> daemons = mManager.get().getChildDaemons(mName);
     		if (daemons != null) {
     			log("onStart", "Restoring " + daemons.size() + " daemons to the task list");
     			
@@ -90,13 +91,13 @@ public class SupportChildManager extends Fragment implements IManager {
 	    	if (mTasks.size() > 0) {
 	    		log("onStop", "Saving " + mTasks.size() + " tasks to the parent TaskManager");
 	    		
-	    		mManager.addChildTasks(mName, mTasks);
+	    		mManager.get().addChildTasks(mName, mTasks);
 	    	}
 	    	
 	    	if (mDaemons.size() > 0)
 	    		log("onStop", "Saving " + mDaemons.size() + " daemons to the parent TaskManager");
 	    	
-	    		mManager.addChildDaemons(mName, mDaemons);
+	    		mManager.get().addChildDaemons(mName, mDaemons);
 	    	
 	    	mTasks = new HashMap<String, ITask>();
 	    	mDaemons = new HashMap<String, IDaemon>();
