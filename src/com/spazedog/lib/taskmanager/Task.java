@@ -29,6 +29,8 @@ import java.util.concurrent.TimeoutException;
 
 import android.annotation.SuppressLint;
 import android.annotation.TargetApi;
+import android.app.Activity;
+import android.app.ProgressDialog;
 import android.os.AsyncTask;
 import android.os.Build;
 
@@ -52,6 +54,9 @@ public abstract class Task<Params, Progress, Result> implements ITask {
 	
 	private Map<String, Runnable> mPendingMethods = new HashMap<String, Runnable>();
 	private final ArrayList<String> mExecutedMethods = new ArrayList<String>();
+	
+	private ProgressDialog mProgressDialog;
+	private String mProgressMessage;
 	
 	private static void log(String aMethod, String aMessage) {
 		Utils.log(TAG, aMethod, aMessage);
@@ -144,6 +149,8 @@ public abstract class Task<Params, Progress, Result> implements ITask {
 			if (getActivityObject() != null) {
 				mReady = true;
 				
+				handleProgressMessage(true);
+				
 	            run("onUIReady", new Runnable() {
 	                public void run() {
 	                	Task.this.runUIReady(false);
@@ -172,6 +179,8 @@ public abstract class Task<Params, Progress, Result> implements ITask {
 			log("onDetachUI", "[" + mCaller + "] Leaving UI state");
 			
 			if (mReady) {
+				handleProgressMessage(false);
+				
 				run("onUIPause", new Runnable() {
 	                public void run() {
 	                	Task.this.runUIPause(false);
@@ -214,6 +223,8 @@ public abstract class Task<Params, Progress, Result> implements ITask {
 						if (aMethod.equals("onPostExecute") || aMethod.equals("onCancelled")) {
 							log("onAttachUI", "[" + mCaller + "] Cleaning up and closing this Task");
 							
+					    	handleProgressMessage(false);
+							
 							mManager.get().removeTask(mCaller);
 							mManager = null;
 						}
@@ -232,6 +243,7 @@ public abstract class Task<Params, Progress, Result> implements ITask {
 	private void runUIReady(Boolean aForce) {
 		if (aForce || mExecutedMethods.contains("onPreExecute")) {
 			log("run", "[" + mCaller + "] Executing method onUIReady()");
+			
 			onUIReady();
 		}
 	}
@@ -274,6 +286,30 @@ public abstract class Task<Params, Progress, Result> implements ITask {
 		return null;
 	}
 	
+    private void handleProgressMessage(Boolean display) {
+    	if (display && mProgressMessage != null) {
+	    	if (!mExecutedMethods.contains("onPostExecute") && !mExecutedMethods.contains("onCancelled")) {
+		    	if (mManager != null && mManager.get() != null && mManager.get().isUIAttached()) {
+					if (mProgressDialog == null) {
+						mProgressDialog = ProgressDialog.show((Activity) getActivityObject(), "", mProgressMessage);
+						
+					} else {
+						mProgressDialog.setMessage( mProgressMessage );
+					}
+		    	}
+	    	}
+	    	
+    	} else if (!display) {
+			if (mProgressDialog != null) {
+				try {
+					mProgressDialog.dismiss();
+					mProgressDialog = null;
+					
+				} catch (Throwable e) {}
+			}
+    	}
+    }
+	
 	/* ###
 	 * # AsyncTask methods
 	 * ### 
@@ -285,6 +321,12 @@ public abstract class Task<Params, Progress, Result> implements ITask {
     protected void onProgressUpdate(Progress... values) {}
     protected void onPostExecute(Result result) {}
     protected void onCancelled() {}
+    
+    public void setProgressMessage(String message) {
+    	mProgressMessage = message;
+  
+    	handleProgressMessage(true);
+    }
     
     public void publishProgress(Progress... values) {
     	cTask.publicPublishProgress(values);
